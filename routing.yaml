@@ -1,0 +1,26 @@
+# Routing config — change this and the NEXT job uses the new model. No redeploy.
+# model_ids must match providers registered in bootstrap.py (GET /v1/providers).
+#
+# Ships pointing at offline mocks so it runs with zero setup. To go real+free:
+#   - run Ollama and set OLLAMA_HOST   -> swap llm models to ollama/...
+#   - run ComfyUI and set COMFYUI_URL  -> swap media models to comfyui/...
+#   - set OPENROUTER_API_KEY           -> use openrouter/...:free as fallback
+
+routing:
+  llm:
+    # Per-task LLM selection: a 'require' list filters to capable models only.
+    script_writing:  { default: "mock/echo-llm", fallbacks: [] }
+    agent_reasoning: { default: "mock/echo-llm", require: ["function_calling"] }
+    kids_content:    { default: "mock/echo-llm", require: ["moderation_ok"] }   # stricter
+  image:
+    default: { default: "mock/image" }
+  video:
+    default: { default: "mock/video" }
+  tts:
+    default: { default: "mock/tts" }
+  music:
+    default: { default: "mock/music" }
+
+policy:
+  max_cost_per_job_usd: 0.0   # 0.0 => free-only. Raise to permit paid fallbacks.
+  prefer: "route_order"       # route_order | cheapest | fastest | best_quality

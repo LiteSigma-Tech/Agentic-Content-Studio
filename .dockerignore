@@ -1,0 +1,8 @@
+**/__pycache__/
+**/*.pyc
+**/demo_output/
+.git/
+.venv/
+*.md
+!routing.yaml
+.pytest_cache/

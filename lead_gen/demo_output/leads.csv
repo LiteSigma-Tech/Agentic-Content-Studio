@@ -1,0 +1,4 @@
+id,name,title,company,industry,region,employees,email,score,status,source,consent_basis
+10c6f174f5,Dana Reyes,VP of Marketing,SolarBright,Renewable Energy,US,120,dana@solarbright.com,100,contacted,licensed_provider_a,legitimate_interest
+347b0d0f72,Marcus Lee,Head of Growth,Helios Co,Renewable Energy,US,300,marcus@helios.co,100,qualified,licensed_provider_a,opt_in
+60620e1e07,Liam Walsh,CMO,EireWind,Renewable Energy,IE,210,liam@eirewind.ie,100,qualified,event_optin,opt_in

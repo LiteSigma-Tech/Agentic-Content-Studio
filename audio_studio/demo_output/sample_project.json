@@ -1,0 +1,236 @@
+{
+  "id": "5b630680ca83",
+  "title": "Pip Learns To Share",
+  "concept": "A shy turtle learns to share with forest friends",
+  "genre": "kids_cartoon",
+  "style_prompt": "2D cartoon, rounded friendly shapes, bright primary colors, simple backgrounds",
+  "characters": [
+    {
+      "name": "Pip",
+      "description": "Pip, a main character of 'Pip Learns To Share'",
+      "reference_uri": "/tmp/gateway_media/b6522d3245844deb96d66622a7300693.png"
+    },
+    {
+      "name": "Bo",
+      "description": "Bo, a main character of 'Pip Learns To Share'",
+      "reference_uri": "/tmp/gateway_media/d86e8a6c45ac45d5b760e2640606fc43.png"
+    }
+  ],
+  "episode": {
+    "number": 1,
+    "title": "Pip Learns To Share",
+    "logline": "A kids_cartoon episode: A shy turtle learns to share with forest friends",
+    "scenes": [
+      {
+        "id": "SC1",
+        "setting": "Establishing location",
+        "shots": [
+          {
+            "id": "S1",
+            "description": "Friendly introduction — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Bo",
+                "text": "(friendly introduction)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/93c5fd2530f94c6b81373d26d288cfd7.png",
+            "clip_uri": "/tmp/gateway_media/1267eeceebd44191a6e8876126627253.json",
+            "dialogue_audio_uri": "/tmp/demo_av/5b630680ca83/media/audio/dlg_S1.wav"
+          },
+          {
+            "id": "S2",
+            "description": "A small fun problem — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Pip",
+                "text": "(a small fun problem)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/5236a09a9abf4774bdf328dcd458ff83.png",
+            "clip_uri": "/tmp/gateway_media/5b40b2842cc64815b55af89aa24a4b9f.json",
+            "dialogue_audio_uri": "/tmp/demo_av/5b630680ca83/media/audio/dlg_S2.wav"
+          },
+          {
+            "id": "S3",
+            "description": "Kind friends help out — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Bo",
+                "text": "(kind friends help out)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/8118e7b2e7124d80af71401531ba1ae8.png",
+            "clip_uri": "/tmp/gateway_media/746ff26f0103435b86d2cb7b4e375cef.json",
+            "dialogue_audio_uri": "/tmp/demo_av/5b630680ca83/media/audio/dlg_S3.wav"
+          },
+          {
+            "id": "S4",
+            "description": "Happy solution — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Pip",
+                "text": "(happy solution)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/50d09f57c50148ad8fc9cd0fb73aa669.png",
+            "clip_uri": "/tmp/gateway_media/cb618f946d6b42c09795af77f9cd6638.json",
+            "dialogue_audio_uri": "/tmp/demo_av/5b630680ca83/media/audio/dlg_S4.wav"
+          },
+          {
+            "id": "S5",
+            "description": "Warm goodbye lesson — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Bo",
+                "text": "(warm goodbye lesson)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/564ae4a8758d42c6809569c41024d1b7.png",
+            "clip_uri": "/tmp/gateway_media/020d1dfe533b4a949f42ec3169e92420.json",
+            "dialogue_audio_uri": "/tmp/demo_av/5b630680ca83/media/audio/dlg_S5.wav"
+          }
+        ]
+      }
+    ]
+  },
+  "manifest_uri": "/tmp/demo_av/5b630680ca83/media/manifest.json",
+  "final_uri": "/tmp/demo_av/5b630680ca83/media/final.mp4",
+  "voice_cast": {
+    "Bo": "vo_bright_f",
+    "Pip": "vo_playful_m"
+  },
+  "music_uri": "/tmp/demo_av/5b630680ca83/media/audio/music_bed.wav",
+  "master_audio_uri": "/tmp/demo_av/5b630680ca83/media/audio/master.wav",
+  "final_av_uri": "/tmp/demo_av/5b630680ca83/media/final_av.mp4",
+  "pipeline": {
+    "stages": [
+      {
+        "name": "write_script",
+        "status": "done",
+        "model_used": "mock/echo-llm",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:03.076043+00:00",
+        "finished_at": "2026-06-26T11:58:03.076495+00:00"
+      },
+      {
+        "name": "design_characters",
+        "status": "done",
+        "model_used": "mock/image",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:03.076706+00:00",
+        "finished_at": "2026-06-26T11:58:03.077107+00:00"
+      },
+      {
+        "name": "generate_keyframes",
+        "status": "done",
+        "model_used": "mock/image",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:03.077266+00:00",
+        "finished_at": "2026-06-26T11:58:03.077921+00:00"
+      },
+      {
+        "name": "generate_clips",
+        "status": "done",
+        "model_used": "mock/video",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:03.078127+00:00",
+        "finished_at": "2026-06-26T11:58:03.079003+00:00"
+      },
+      {
+        "name": "assemble",
+        "status": "done",
+        "model_used": "local/assembler",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:03.079176+00:00",
+        "finished_at": "2026-06-26T11:58:03.079713+00:00"
+      },
+      {
+        "name": "render",
+        "status": "done",
+        "model_used": "local/ffmpeg",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:03.079875+00:00",
+        "finished_at": "2026-06-26T11:58:04.106820+00:00"
+      },
+      {
+        "name": "cast_voices",
+        "status": "done",
+        "model_used": "local/casting",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:04.107258+00:00",
+        "finished_at": "2026-06-26T11:58:04.107606+00:00"
+      },
+      {
+        "name": "generate_dialogue",
+        "status": "done",
+        "model_used": "mock/tts",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:04.107837+00:00",
+        "finished_at": "2026-06-26T11:58:04.585733+00:00"
+      },
+      {
+        "name": "generate_music",
+        "status": "done",
+        "model_used": "mock/music",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:04.586295+00:00",
+        "finished_at": "2026-06-26T11:58:04.700629+00:00"
+      },
+      {
+        "name": "mix_audio",
+        "status": "done",
+        "model_used": "local/mixer",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:04.701081+00:00",
+        "finished_at": "2026-06-26T11:58:04.917775+00:00"
+      },
+      {
+        "name": "mux",
+        "status": "done",
+        "model_used": "local/ffmpeg",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:58:04.918214+00:00",
+        "finished_at": "2026-06-26T11:58:05.470181+00:00"
+      }
+    ]
+  },
+  "created_at": "2026-06-26T11:58:03.075384+00:00",
+  "updated_at": "2026-06-26T11:58:05.470197+00:00"
+}

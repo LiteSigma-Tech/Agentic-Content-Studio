@@ -1,0 +1,59 @@
+{
+  "project_id": "f049054e5b67",
+  "title": "Pip Learns To Share",
+  "genre": "kids_cartoon",
+  "duration_s": 20.0,
+  "style_prompt": "2D cartoon, rounded friendly shapes, bright primary colors, simple backgrounds",
+  "timeline": [
+    {
+      "shot_id": "S1",
+      "scene": "SC1",
+      "start": 0.0,
+      "seconds": 4.0,
+      "clip_uri": "/tmp/gateway_media/4a825ae030cc4e3d93fc82fc23be6144.json",
+      "keyframe_uri": "/tmp/gateway_media/1a83e4500997417bb4c3fc7cc2246036.png",
+      "transition": "cut",
+      "description": "Friendly introduction \u2014 A shy turtle learns to share with forest friends"
+    },
+    {
+      "shot_id": "S2",
+      "scene": "SC1",
+      "start": 4.0,
+      "seconds": 4.0,
+      "clip_uri": "/tmp/gateway_media/0f141a9d38724d1497942f5702bb6332.json",
+      "keyframe_uri": "/tmp/gateway_media/7908e2b59b3149d8a6a2ca9b67c0a06e.png",
+      "transition": "cut",
+      "description": "A small fun problem \u2014 A shy turtle learns to share with forest friends"
+    },
+    {
+      "shot_id": "S3",
+      "scene": "SC1",
+      "start": 8.0,
+      "seconds": 4.0,
+      "clip_uri": "/tmp/gateway_media/59d1d804f03d4a18bfc40f1b4e3024b8.json",
+      "keyframe_uri": "/tmp/gateway_media/0c45523e0c0f4f3ea0c727fb33d84972.png",
+      "transition": "cut",
+      "description": "Kind friends help out \u2014 A shy turtle learns to share with forest friends"
+    },
+    {
+      "shot_id": "S4",
+      "scene": "SC1",
+      "start": 12.0,
+      "seconds": 4.0,
+      "clip_uri": "/tmp/gateway_media/b64cd525d548497992abcdc7adea0e05.json",
+      "keyframe_uri": "/tmp/gateway_media/32c5535590e542918d2a1cbb201bac8b.png",
+      "transition": "cut",
+      "description": "Happy solution \u2014 A shy turtle learns to share with forest friends"
+    },
+    {
+      "shot_id": "S5",
+      "scene": "SC1",
+      "start": 16.0,
+      "seconds": 4.0,
+      "clip_uri": "/tmp/gateway_media/696660e7b7f94ff1b02608efc915f3c8.json",
+      "keyframe_uri": "/tmp/gateway_media/732eb76c59ba4c6da0293f47e6426e4d.png",
+      "transition": "cut",
+      "description": "Warm goodbye lesson \u2014 A shy turtle learns to share with forest friends"
+    }
+  ]
+}

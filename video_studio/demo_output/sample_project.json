@@ -1,0 +1,179 @@
+{
+  "id": "f049054e5b67",
+  "title": "Pip Learns To Share",
+  "concept": "A shy turtle learns to share with forest friends",
+  "genre": "kids_cartoon",
+  "style_prompt": "2D cartoon, rounded friendly shapes, bright primary colors, simple backgrounds",
+  "characters": [
+    {
+      "name": "Pip",
+      "description": "Pip, a main character of 'Pip Learns To Share'",
+      "reference_uri": "/tmp/gateway_media/9d832c5210cb490e8f229f693262f35a.png"
+    },
+    {
+      "name": "Bo",
+      "description": "Bo, a main character of 'Pip Learns To Share'",
+      "reference_uri": "/tmp/gateway_media/328c9275fcd947e09c240c99eccb22db.png"
+    }
+  ],
+  "episode": {
+    "number": 1,
+    "title": "Pip Learns To Share",
+    "logline": "A kids_cartoon episode: A shy turtle learns to share with forest friends",
+    "scenes": [
+      {
+        "id": "SC1",
+        "setting": "Establishing location",
+        "shots": [
+          {
+            "id": "S1",
+            "description": "Friendly introduction — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Bo",
+                "text": "(friendly introduction)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/1a83e4500997417bb4c3fc7cc2246036.png",
+            "clip_uri": "/tmp/gateway_media/4a825ae030cc4e3d93fc82fc23be6144.json"
+          },
+          {
+            "id": "S2",
+            "description": "A small fun problem — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Pip",
+                "text": "(a small fun problem)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/7908e2b59b3149d8a6a2ca9b67c0a06e.png",
+            "clip_uri": "/tmp/gateway_media/0f141a9d38724d1497942f5702bb6332.json"
+          },
+          {
+            "id": "S3",
+            "description": "Kind friends help out — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Bo",
+                "text": "(kind friends help out)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/0c45523e0c0f4f3ea0c727fb33d84972.png",
+            "clip_uri": "/tmp/gateway_media/59d1d804f03d4a18bfc40f1b4e3024b8.json"
+          },
+          {
+            "id": "S4",
+            "description": "Happy solution — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Pip",
+                "text": "(happy solution)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/32c5535590e542918d2a1cbb201bac8b.png",
+            "clip_uri": "/tmp/gateway_media/b64cd525d548497992abcdc7adea0e05.json"
+          },
+          {
+            "id": "S5",
+            "description": "Warm goodbye lesson — A shy turtle learns to share with forest friends",
+            "dialogue": [
+              {
+                "character": "Bo",
+                "text": "(warm goodbye lesson)"
+              }
+            ],
+            "seconds": 4.0,
+            "characters": [
+              "Pip",
+              "Bo"
+            ],
+            "keyframe_uri": "/tmp/gateway_media/732eb76c59ba4c6da0293f47e6426e4d.png",
+            "clip_uri": "/tmp/gateway_media/696660e7b7f94ff1b02608efc915f3c8.json"
+          }
+        ]
+      }
+    ]
+  },
+  "manifest_uri": "/tmp/demo_studio/f049054e5b67/media/manifest.json",
+  "final_uri": "/tmp/demo_studio/f049054e5b67/media/final.mp4",
+  "pipeline": {
+    "stages": [
+      {
+        "name": "write_script",
+        "status": "done",
+        "model_used": "mock/echo-llm",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:49:28.987740+00:00",
+        "finished_at": "2026-06-26T11:49:28.988172+00:00"
+      },
+      {
+        "name": "design_characters",
+        "status": "done",
+        "model_used": "mock/image",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:49:28.988377+00:00",
+        "finished_at": "2026-06-26T11:49:28.989017+00:00"
+      },
+      {
+        "name": "generate_keyframes",
+        "status": "done",
+        "model_used": "mock/image",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:49:28.989184+00:00",
+        "finished_at": "2026-06-26T11:49:28.989777+00:00"
+      },
+      {
+        "name": "generate_clips",
+        "status": "done",
+        "model_used": "mock/video",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:49:28.989965+00:00",
+        "finished_at": "2026-06-26T11:49:28.990509+00:00"
+      },
+      {
+        "name": "assemble",
+        "status": "done",
+        "model_used": "local/assembler",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:49:28.990684+00:00",
+        "finished_at": "2026-06-26T11:49:28.991024+00:00"
+      },
+      {
+        "name": "render",
+        "status": "done",
+        "model_used": "local/ffmpeg",
+        "cost_usd": 0.0,
+        "error": null,
+        "started_at": "2026-06-26T11:49:28.991203+00:00",
+        "finished_at": "2026-06-26T11:49:29.982052+00:00"
+      }
+    ]
+  },
+  "created_at": "2026-06-26T11:49:28.987248+00:00",
+  "updated_at": "2026-06-26T11:49:29.982065+00:00"
+}

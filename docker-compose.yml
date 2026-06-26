@@ -1,0 +1,89 @@
+name: agentic-platform
+
+# Five services from one shared image (built once by `gateway`). The studio and
+# agents route their model calls through the gateway over HTTP (GATEWAY_URL), and
+# the studio shares the gateway's media volume so generated files resolve across
+# containers. Internal port is 8000 everywhere; host ports are 8001–8005.
+
+services:
+  gateway:
+    build: .
+    image: agentic-platform:latest
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports: ["8001:8000"]
+    volumes:
+      - gateway_media:/tmp/gateway_media     # shared with the studio
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  studio:                                     # video + audio pipeline (B4 + B5)
+    image: agentic-platform:latest
+    command: uvicorn audio_studio.api:app --host 0.0.0.0 --port 8000
+    environment:
+      GATEWAY_URL: http://gateway:8000        # route model calls to the gateway
+    ports: ["8002:8000"]
+    volumes:
+      - gateway_media:/tmp/gateway_media      # read keyframes/clips/audio the gateway wrote
+      - studio_data:/tmp/video_studio         # persist rendered episodes
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  leads:                                      # lead generation (B3, on the agent runtime)
+    image: agentic-platform:latest
+    command: uvicorn lead_gen.api:app --host 0.0.0.0 --port 8000
+    ports: ["8003:8000"]
+    volumes:
+      - leadgen_runs:/tmp/leadgen_runs        # durable outreach approval runs
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  agents:                                     # agent runtime (B2)
+    image: agentic-platform:latest
+    command: uvicorn agent_runtime.api:app --host 0.0.0.0 --port 8000
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      # AGENT_LLM_POLICY: "1"                 # uncomment to drive agents via a real LLM
+    ports: ["8004:8000"]
+    volumes:
+      - agent_runs:/tmp/agent_runs            # durable agent runs (checkpoint/resume)
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  platform:                                   # auth · tenancy · RBAC · metering (B0–B1)
+    image: agentic-platform:latest
+    command: uvicorn platform_core.app:app --host 0.0.0.0 --port 8000
+    environment:
+      # set a stable key in a real deployment so tokens survive restarts / scale out
+      PLATFORM_SIGNING_KEY: ${PLATFORM_SIGNING_KEY:-dev-only-change-me}
+    ports: ["8005:8000"]
+    restart: unless-stopped
+
+# The production frontend is a separate Next.js image (the file in ./frontend is an
+# interactive React prototype, not a built app). Add it here once that app exists, e.g.:
+#   frontend:
+#     build: ./frontend
+#     ports: ["3000:3000"]
+#     environment: { NEXT_PUBLIC_API_BASE: http://localhost:8005 }
+
+volumes:
+  gateway_media:
+  studio_data:
+  leadgen_runs:
+  agent_runs:

@@ -1,0 +1,124 @@
+[
+  {
+    "step": 1,
+    "type": "think",
+    "summary": "research the goal",
+    "data": {},
+    "model": "",
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.453626+00:00"
+  },
+  {
+    "step": 1,
+    "type": "tool_call",
+    "summary": "web_search({'query': 'solar installers in Austin'})",
+    "data": {
+      "args": {
+        "query": "solar installers in Austin"
+      },
+      "approved": false
+    },
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.453651+00:00"
+  },
+  {
+    "step": 1,
+    "type": "tool_result",
+    "summary": "Top results for 'solar installers in Austin': (1) Overview of solar installers in Austin; (2) Recent trends in solar installers in Austin; (3) Key players and c",
+    "data": {
+      "result": "Top results for 'solar installers in Austin': (1) Overview of solar installers in Austin; (2) Recent trends in solar installers in Austin; (3) Key players and contact pages related to solar installers in Austin."
+    },
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.453661+00:00"
+  },
+  {
+    "step": 2,
+    "type": "think",
+    "summary": "draft outreach (needs approval)",
+    "data": {},
+    "model": "",
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.453964+00:00"
+  },
+  {
+    "step": 2,
+    "type": "approval_request",
+    "summary": "send_email needs human approval",
+    "data": {
+      "tool": "send_email",
+      "args": {
+        "to": "lead@example.com",
+        "subject": "Hello",
+        "body": "Saw your work \u2014 would love to connect."
+      }
+    },
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.454001+00:00"
+  },
+  {
+    "step": 2,
+    "type": "approval_decision",
+    "summary": "approved send_email",
+    "data": {
+      "tool": "send_email",
+      "args": {
+        "to": "lead@example.com",
+        "subject": "Hello",
+        "body": "Saw your work \u2014 would love to connect."
+      },
+      "approved": true,
+      "note": ""
+    },
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.456339+00:00"
+  },
+  {
+    "step": 2,
+    "type": "tool_call",
+    "summary": "send_email({'to': 'lead@example.com', 'subject': 'Hello', 'body': 'Saw your work \u2014 would love to connect.'})",
+    "data": {
+      "args": {
+        "to": "lead@example.com",
+        "subject": "Hello",
+        "body": "Saw your work \u2014 would love to connect."
+      },
+      "approved": true
+    },
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.456412+00:00"
+  },
+  {
+    "step": 2,
+    "type": "tool_result",
+    "summary": "Email queued to lead@example.com | subject='Hello' | 38 chars (simulated send)",
+    "data": {
+      "result": "Email queued to lead@example.com | subject='Hello' | 38 chars (simulated send)"
+    },
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.456426+00:00"
+  },
+  {
+    "step": 3,
+    "type": "think",
+    "summary": "done",
+    "data": {},
+    "model": "",
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.456718+00:00"
+  },
+  {
+    "step": 3,
+    "type": "final",
+    "summary": "Outreach task handled.",
+    "data": {},
+    "model": null,
+    "cost_usd": 0.0,
+    "ts": "2026-06-26T12:05:45.456749+00:00"
+  }
+]
