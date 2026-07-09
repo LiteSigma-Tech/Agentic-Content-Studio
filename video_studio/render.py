@@ -76,9 +76,11 @@ def render_mp4(project: Project, out_dir: Path) -> tuple[str | None, bool]:
     for i, sh in enumerate(project.all_shots()):
         seg = parts_dir / f"seg_{i:03d}.mp4"
         if _is_real_video(sh.clip_uri):
-            # re-encode the real clip to uniform params for safe concatenation
+            # Loop the clip if it is shorter than the shot duration, then trim.
+            # This handles animate-diff clips (3s) filling a 5s shot slot.
             subprocess.run(
-                ["ffmpeg", "-y", "-i", sh.clip_uri, "-t", str(sh.seconds),
+                ["ffmpeg", "-y", "-stream_loop", "-1", "-i", sh.clip_uri,
+                 "-t", str(sh.seconds),
                  "-vf", f"scale={_W}:{_H}", "-r", str(_FPS),
                  "-c:v", "libx264", "-pix_fmt", "yuv420p", str(seg)],
                 capture_output=True, check=True, timeout=120)

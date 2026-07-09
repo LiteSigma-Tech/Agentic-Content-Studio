@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Env / secrets
+.env
+*.env.local
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / frontend
+frontend-app/node_modules/
+frontend-app/dist/
+frontend-app/.vite/
+
+# Generated media / demo outputs
+/tmp/
+**/demo_output/
+*.mp4
+*.wav
+*.png
+*.jpg
+!frontend-app/public/**
+
+# Docker
+*.Zone.Identifier

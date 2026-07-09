@@ -131,15 +131,22 @@ def test_rate_limit_trips_then_refills():
 
 # --- HTTP end-to-end (auth -> rbac -> quota -> meter -> observe) -------------
 def test_http_flow_with_testclient():
+    import os
+    os.environ["ADMIN_BOOTSTRAP_TOKEN"] = "test-token"
     from fastapi.testclient import TestClient
     from platform_core.app import app, platform
     c = TestClient(app)
+    bh = {"Authorization": "Bearer test-token"}
 
     # unauthenticated is rejected
     assert c.get("/v1/whoami").status_code == 401
 
+    # bootstrap token is required
+    assert c.post("/admin/tenants", json={"name": "X", "admin_email": "x@x.com",
+                                          "admin_password": "pw"}).status_code == 403
+
     boot = c.post("/admin/tenants", json={"name": "Acme", "admin_email": "a@acme.com",
-                                          "admin_password": "pw"}).json()
+                                          "admin_password": "pw"}, headers=bh).json()
     key = boot["api_key"]
     h = {"X-API-Key": key}
 

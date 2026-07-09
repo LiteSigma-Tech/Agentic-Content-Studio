@@ -4,7 +4,7 @@
   POST /v1/leads/source {n}          -> source + enrich + dedupe
   POST /v1/leads/qualify             -> score + qualify against the ICP
   POST /v1/leads/compliance          -> apply compliance gate (contactable vs blocked)
-  GET  /v1/leads                     -> list leads with score/status/reasons
+  GET  /v1/leads                     -> list leads with score/status/reasons (paginated)
   POST /v1/outreach/propose {lead_id}-> draft + create an approval-gated send (B2)
   POST /v1/outreach/{run_id}/approve -> approve/reject the send (human-in-the-loop)
   POST /v1/unsubscribe {email}       -> add to suppression
@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .models import ICP
@@ -23,6 +24,38 @@ from .service import LeadGenService
 
 app = FastAPI(title="Lead Generation", version="0.1.0")
 service = LeadGenService(runs_root=os.getenv("LEADGEN_RUNS_ROOT", "/tmp/leadgen_runs"))
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://localhost:5174",
+    ).split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+try:
+    from shared.metrics import add_metrics_endpoint
+    add_metrics_endpoint(app, "leads")
+except Exception:
+    pass
+
+
+@app.on_event("startup")
+async def _startup():
+    try:
+        from shared.logging_config import configure_logging
+        configure_logging()
+    except Exception:
+        pass
+    # Hydrate state from DB
+    try:
+        await service.aload_leads()
+        await service.aload_suppression()
+    except Exception:
+        pass
 
 
 class SourceReq(BaseModel):
@@ -54,23 +87,51 @@ def set_icp(icp: ICP):
 
 
 @app.post("/v1/leads/source")
-def source(req: SourceReq):
-    return {"unique_leads": service.source(req.n)}
+async def source(req: SourceReq):
+    result = service.source(req.n)
+    # Persist to DB
+    try:
+        await service.asave_all_leads()
+    except Exception:
+        pass
+    return {"unique_leads": result}
 
 
 @app.post("/v1/leads/qualify")
-def qualify_leads():
-    return service.score_and_qualify()
+async def qualify_leads():
+    result = service.score_and_qualify()
+    # Persist to DB
+    try:
+        await service.asave_all_leads()
+    except Exception:
+        pass
+    return result
 
 
 @app.post("/v1/leads/compliance")
-def compliance():
-    return service.apply_compliance()
+async def compliance():
+    result = service.apply_compliance()
+    # Persist to DB
+    try:
+        await service.asave_all_leads()
+    except Exception:
+        pass
+    return result
 
 
 @app.get("/v1/leads")
-def list_leads():
-    return {"leads": [l.model_dump(mode="json") for l in service.leads.values()]}
+async def list_leads(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    status: str | None = Query(None),
+):
+    all_leads = list(service.leads.values())
+    if status:
+        all_leads = [l for l in all_leads
+                     if (l.status.value if hasattr(l.status, 'value') else str(l.status)) == status]
+    total = len(all_leads)
+    page = all_leads[offset:offset + limit]
+    return {"items": [l.model_dump() for l in page], "total": total, "limit": limit, "offset": offset}
 
 
 @app.post("/v1/outreach/propose")
@@ -89,9 +150,9 @@ def approve(run_id: str, req: ApproveReq):
 
 
 @app.post("/v1/unsubscribe")
-def unsubscribe(req: UnsubReq):
-    service.unsubscribe(req.email)
-    return {"status": "ok", "suppressed": req.email}
+async def unsubscribe(req: UnsubReq):
+    await service.asave_suppression(req.email)
+    return {"unsubscribed": req.email}
 
 
 @app.post("/v1/leads/export")

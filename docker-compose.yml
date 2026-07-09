@@ -1,18 +1,98 @@
 name: agentic-platform
 
-# Five services from one shared image (built once by `gateway`). The studio and
-# agents route their model calls through the gateway over HTTP (GATEWAY_URL), and
-# the studio shares the gateway's media volume so generated files resolve across
-# containers. Internal port is 8000 everywhere; host ports are 8001–8005.
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agentic
+      POSTGRES_USER: agentic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "agentic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    # No public port — only accessible within the Docker network
+
+  redis:
+    image: redis:7-alpine
+    command: >
+      sh -c "redis-server --appendonly yes
+      $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: >
+        sh -c "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    # No public port — only accessible within the Docker network
+
+  migrate:
+    image: agentic-platform:latest
+    command: python -m db.init
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # libpq-native vars — psycopg2 reads these directly; no URL parsing needed.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: agentic
+      PGUSER: agentic
+      PGPASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      # DATABASE_URL still set so db/init.py skips gracefully when unset.
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   gateway:
     build: .
     image: agentic-platform:latest
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    ports: ["8001:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Real model backends — leave blank to use offline mocks.
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      COMFYUI_URL: ${COMFYUI_URL:-}
+      REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
+      HF_API_TOKEN: ${HF_API_TOKEN:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      # AWS Bedrock — sourced from .env via env_file above.
+      AWS_BEDROCK_REGION: ${AWS_BEDROCK_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    ports: ["127.0.0.1:8001:8000"]
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    # Makes host.docker.internal resolve to the host machine on Linux,
+    # so Ollama (running on the host) is reachable from inside the container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - gateway_media:/tmp/gateway_media     # shared with the studio
+      - gateway_media:/tmp/gateway_media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:8000/healthz"]
       interval: 10s
@@ -21,17 +101,31 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  studio:                                     # video + audio pipeline (B4 + B5)
+  studio:
     image: agentic-platform:latest
     command: uvicorn audio_studio.api:app --host 0.0.0.0 --port 8000
+    env_file:
+      - path: .env
+        required: false
     environment:
-      GATEWAY_URL: http://gateway:8000        # route model calls to the gateway
-    ports: ["8002:8000"]
+      GATEWAY_URL: http://gateway:8000
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      COMFYUI_URL: ${COMFYUI_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    ports: ["127.0.0.1:8002:8000"]
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
-      - gateway_media:/tmp/gateway_media      # read keyframes/clips/audio the gateway wrote
-      - studio_data:/tmp/video_studio         # persist rendered episodes
+      - gateway_media:/tmp/gateway_media
+      - studio_data:/tmp/video_studio
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       gateway:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:8000/healthz"]
@@ -41,49 +135,130 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  leads:                                      # lead generation (B3, on the agent runtime)
+  leads:
     image: agentic-platform:latest
     command: uvicorn lead_gen.api:app --host 0.0.0.0 --port 8000
-    ports: ["8003:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    ports: ["127.0.0.1:8003:8000"]
     volumes:
-      - leadgen_runs:/tmp/leadgen_runs        # durable outreach approval runs
+      - leadgen_runs:/tmp/leadgen_runs
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       gateway:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
-  agents:                                     # agent runtime (B2)
+  agents:
     image: agentic-platform:latest
     command: uvicorn agent_runtime.api:app --host 0.0.0.0 --port 8000
+    env_file:
+      - path: .env
+        required: false
     environment:
       GATEWAY_URL: http://gateway:8000
-      # AGENT_LLM_POLICY: "1"                 # uncomment to drive agents via a real LLM
-    ports: ["8004:8000"]
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    ports: ["127.0.0.1:8004:8000"]
     volumes:
-      - agent_runs:/tmp/agent_runs            # durable agent runs (checkpoint/resume)
+      - agent_runs:/tmp/agent_runs
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       gateway:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
-  platform:                                   # auth · tenancy · RBAC · metering (B0–B1)
+  platform:
     image: agentic-platform:latest
     command: uvicorn platform_core.app:app --host 0.0.0.0 --port 8000
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # set a stable key in a real deployment so tokens survive restarts / scale out
       PLATFORM_SIGNING_KEY: ${PLATFORM_SIGNING_KEY:-dev-only-change-me}
-    ports: ["8005:8000"]
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-}
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    ports: ["127.0.0.1:8005:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
-# The production frontend is a separate Next.js image (the file in ./frontend is an
-# interactive React prototype, not a built app). Add it here once that app exists, e.g.:
-#   frontend:
-#     build: ./frontend
-#     ports: ["3000:3000"]
-#     environment: { NEXT_PUBLIC_API_BASE: http://localhost:8005 }
+  frontend:
+    build:
+      context: ./frontend-app
+      dockerfile: Dockerfile
+    ports: ["3000:80"]
+    environment:
+      - VITE_GATEWAY_URL=http://localhost:8001
+      - VITE_STUDIO_URL=http://localhost:8002
+      - VITE_LEADS_URL=http://localhost:8003
+      - VITE_AGENTS_URL=http://localhost:8004
+      - VITE_PLATFORM_URL=http://localhost:8005
+    depends_on:
+      - platform
+    restart: unless-stopped
+
+  worker:
+    image: agentic-platform:latest
+    command: python -m arq shared.worker.WorkerSettings
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      COMFYUI_URL: ${COMFYUI_URL:-}
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - gateway_media:/tmp/gateway_media
+      - studio_data:/tmp/video_studio
+      - agent_runs:/tmp/agent_runs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports: ["80:80"]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - gateway
+      - studio
+      - leads
+      - agents
+      - platform
+      - frontend
+    restart: unless-stopped
 
 volumes:
   gateway_media:
   studio_data:
   leadgen_runs:
   agent_runs:
+  postgres_data:
+  redis_data:

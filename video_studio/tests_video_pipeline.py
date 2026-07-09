@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -19,6 +20,19 @@ from video_studio.pipeline import Pipeline, create_project  # noqa: E402
 from video_studio.store import ProjectStore  # noqa: E402
 
 ROUTING = str(REPO / "routing.yaml")
+
+_HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
+
+
+def _assert_video(path_or_none: str | None) -> None:
+    """Assert the rendered video exists — or that it's None when ffmpeg is absent."""
+    if _HAS_FFMPEG:
+        assert path_or_none and Path(path_or_none).exists(), \
+            f"expected a rendered .mp4 but got {path_or_none!r}"
+        assert Path(path_or_none).stat().st_size > 0
+    else:
+        assert path_or_none is None, \
+            f"ffmpeg absent — expected None final_uri but got {path_or_none!r}"
 
 
 def _fresh():
@@ -34,8 +48,7 @@ def test_full_pipeline_produces_video():
     assert all(s.status == StageStatus.done for s in out.pipeline.stages)
     assert len(out.pipeline.stages) == 6
     assert out.manifest_uri and Path(out.manifest_uri).exists()
-    assert out.final_uri and Path(out.final_uri).exists()   # real mp4 via ffmpeg
-    assert Path(out.final_uri).stat().st_size > 0
+    _assert_video(out.final_uri)
     # every shot got a keyframe and a clip
     assert all(sh.keyframe_uri and sh.clip_uri for sh in out.all_shots())
 
@@ -74,7 +87,7 @@ def test_checkpoint_resume_after_failure():
         out = pipe.run(p.id)
         assert all(x.status == StageStatus.done for x in out.pipeline.stages)
         assert calls["n"] == 2          # clip stage attempted exactly twice total
-        assert out.final_uri and Path(out.final_uri).exists()
+        _assert_video(out.final_uri)
     finally:
         stages.STAGES[3] = ("generate_clips", real_clips)
 

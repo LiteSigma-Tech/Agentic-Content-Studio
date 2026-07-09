@@ -73,3 +73,56 @@ class UsageMeter:
             "jobs": self.jobs(tenant.id), "job_cap": tenant.job_cap,
             "by_kind": by_kind,
         }
+
+    # --- async methods -------------------------------------------------------
+
+    async def arecord(self, tenant_id: str, kind: str, qty: float = 1.0, cost_usd: float = 0.0) -> "UsageEvent":
+        ev = self.record(tenant_id, kind, qty, cost_usd)  # always update in-memory
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "INSERT INTO usage_events(tenant_id,kind,qty,cost_usd,ts) VALUES($1,$2,$3,$4,$5)",
+                        tenant_id, kind, float(qty), round(cost_usd, 6), ev.ts
+                    )
+        except Exception:
+            pass
+        return ev
+
+    async def acost(self, tenant_id: str) -> float:
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT COALESCE(SUM(cost_usd),0.0) AS total FROM usage_events WHERE tenant_id=$1", tenant_id
+                    )
+                    return float(row['total'])
+        except Exception:
+            pass
+        return self.cost(tenant_id)
+
+    async def ajobs(self, tenant_id: str) -> int:
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT COUNT(*) AS total FROM usage_events WHERE tenant_id=$1 AND kind='job'", tenant_id
+                    )
+                    return int(row['total'])
+        except Exception:
+            pass
+        return self.jobs(tenant_id)
+
+    async def acheck_quota(self, tenant, *, add_cost: float = 0.0, add_jobs: int = 0) -> None:
+        cost = await self.acost(tenant.id)
+        jobs = await self.ajobs(tenant.id)
+        if cost + add_cost > tenant.cost_cap_usd:
+            raise QuotaExceeded(f"spend quota exceeded: ${cost + add_cost:.4f} > ${tenant.cost_cap_usd:.2f}")
+        if jobs + add_jobs > tenant.job_cap:
+            raise QuotaExceeded(f"job quota exceeded: {jobs + add_jobs} > {tenant.job_cap}")

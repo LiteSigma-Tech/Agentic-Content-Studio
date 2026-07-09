@@ -147,3 +147,274 @@ class MockMusicProvider:
         uri = _stub_file(".txt", prompt.encode())
         return MediaAsset(uri=uri, mime="audio/wav", model_id=self.model_id,
                           meta={"seconds": seconds})
+
+
+# --- DEEPGRAM TTS (free tier, $200 credit) -----------------------------------
+
+class DeepgramTTSProvider:
+    """Deepgram Aura TTS — high-quality, low-latency, generous free tier.
+
+    Voices: aura-2-thalia-en (F), aura-2-orion-en (M), aura-2-luna-en (F),
+            aura-2-arcas-en (M). Pass voice name as voice_id.
+    """
+    _API = "https://api.deepgram.com/v1/speak"
+    _VOICE_MAP = {
+        "default":   "aura-2-thalia-en",
+        "af_bella":  "aura-2-thalia-en",
+        "af_heart":  "aura-2-luna-en",
+        "male":      "aura-2-orion-en",
+        "female":    "aura-2-thalia-en",
+    }
+
+    def __init__(self, token: str):
+        self.model_id = "deepgram/aura-2"
+        self._token = token
+        self.capabilities = {Cap.MULTI_SPEAKER, Cap.MODERATION_OK}
+        self.est_cost_usd = 0.0
+        self.est_latency_s = 3.0
+        self.quality = 8
+
+    _CHUNK = 1900  # Deepgram free-tier limit per request
+
+    def _speak(self, client: httpx.Client, voice: str, text: str) -> bytes:
+        r = client.post(
+            f"{self._API}?model={voice}",
+            json={"text": text},
+            headers={"Authorization": f"Token {self._token}",
+                     "Content-Type": "application/json"},
+        )
+        r.raise_for_status()
+        return r.content
+
+    def synthesize(self, text, *, voice_id="default") -> MediaAsset:
+        # Fall back to the default Deepgram voice for any unrecognised ID
+        voice = self._VOICE_MAP.get(voice_id, self._VOICE_MAP["default"])
+        try:
+            with httpx.Client(timeout=30) as client:
+                if len(text) <= self._CHUNK:
+                    audio = self._speak(client, voice, text)
+                else:
+                    # Split on sentence boundaries, stay under the char limit
+                    import re
+                    sentences = re.split(r'(?<=[.!?])\s+', text)
+                    chunks, current = [], ""
+                    for s in sentences:
+                        if len(current) + len(s) + 1 > self._CHUNK:
+                            if current:
+                                chunks.append(current.strip())
+                            current = s
+                        else:
+                            current = (current + " " + s).strip()
+                    if current:
+                        chunks.append(current)
+                    audio = b"".join(self._speak(client, voice, c) for c in chunks)
+            uri = _stub_file(".mp3", audio)
+            return MediaAsset(uri=uri, mime="audio/mpeg", model_id=self.model_id,
+                              cost_usd=self.est_cost_usd)
+        except Exception as e:
+            from ..errors import ProviderError
+            raise ProviderError(f"Deepgram TTS failed: {e}") from e
+
+
+# --- HUGGING FACE INFERENCE API (free tier) ----------------------------------
+
+class _HuggingFaceBase:
+    """Shared base for HF Inference API providers.
+
+    Returns binary content directly — image, audio, etc.
+    Handles 503 model-loading responses with automatic retry.
+    """
+    _API = "https://router.huggingface.co/hf-inference/models"
+
+    def __init__(self, model_id: str, hf_model: str, token: str,
+                 capabilities, est_cost_usd: float, est_latency_s: float,
+                 quality: int):
+        self.model_id = model_id
+        self._hf_model = hf_model
+        self._token = token
+        self.capabilities = set(capabilities)
+        self.est_cost_usd = est_cost_usd
+        self.est_latency_s = est_latency_s
+        self.quality = quality
+
+    def _call(self, payload: dict, suffix: str, timeout: float = 120) -> str:
+        import time
+        url = f"{self._API}/{self._hf_model}"
+        headers = {"Authorization": f"Bearer {self._token}",
+                   "Content-Type": "application/json"}
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                for attempt in range(3):
+                    r = client.post(url, json=payload, headers=headers)
+                    if r.status_code == 503:
+                        # Model is loading — wait and retry
+                        wait = r.json().get("estimated_time", 20)
+                        time.sleep(min(wait, 30))
+                        continue
+                    if r.status_code != 200:
+                        raise ProviderError(
+                            f"{self.model_id} HF API error {r.status_code}: {r.text[:200]}")
+                    return _stub_file(suffix, r.content)
+                raise ProviderError(f"{self.model_id}: model still loading after retries")
+        except ProviderError:
+            raise
+        except Exception as e:
+            raise ProviderError(f"{self.model_id} call failed: {e}") from e
+
+
+class HuggingFaceImageProvider(_HuggingFaceBase):
+    def generate(self, prompt, *, width=1024, height=576) -> MediaAsset:
+        uri = self._call({"inputs": prompt}, ".png")
+        return MediaAsset(uri=uri, mime="image/png", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)
+
+
+class HuggingFaceTTSProvider(_HuggingFaceBase):
+    def synthesize(self, text, *, voice_id="default") -> MediaAsset:
+        uri = self._call({"inputs": text}, ".wav")
+        return MediaAsset(uri=uri, mime="audio/wav", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)
+
+
+class HuggingFaceMusicProvider(_HuggingFaceBase):
+    def generate(self, prompt, *, seconds=15.0) -> MediaAsset:
+        uri = self._call({"inputs": prompt}, ".wav")
+        return MediaAsset(uri=uri, mime="audio/wav", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)
+
+
+# --- REPLICATE (hosted, pay-per-run) ----------------------------------------
+
+class _ReplicateBase:
+    """Shared base for all Replicate-hosted media providers.
+
+    Uses `Prefer: wait=55` for a synchronous response when the model is fast.
+    Falls back to polling for slower models (video generation etc.).
+    """
+    _API = "https://api.replicate.com/v1"
+
+    def __init__(self, model_id: str, owner_model: str, token: str,
+                 capabilities, est_cost_usd: float, est_latency_s: float,
+                 quality: int, version: str | None = None):
+        self.model_id = model_id
+        self._owner_model = owner_model   # "owner/model-name" slug on Replicate
+        self._version = version           # specific version ID for community models
+        self._token = token
+        self.capabilities = set(capabilities)
+        self.est_cost_usd = est_cost_usd
+        self.est_latency_s = est_latency_s
+        self.quality = quality
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+                "Prefer": "wait=55"}
+
+    def _run(self, input_data: dict, timeout: float = 300):
+        """Submit a prediction and return the output value (URL or list)."""
+        import time
+        # Community models need the versioned endpoint; official models use the
+        # model-based endpoint.
+        if self._version:
+            url = f"{self._API}/predictions"
+            body = {"version": self._version, "input": input_data}
+        else:
+            url = f"{self._API}/models/{self._owner_model}/predictions"
+            body = {"input": input_data}
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                # Retry up to 4 times on 429 rate-limit with exponential backoff
+                for attempt in range(6):
+                    r = client.post(url, json=body, headers=self._headers())
+                    if r.status_code == 429:
+                        if attempt < 5:
+                            wait = 15 * (2 ** attempt)  # 15s, 30s, 60s, 120s, 240s
+                            time.sleep(min(wait, 300))
+                            continue
+                        raise ProviderError(
+                            f"Replicate rate-limited after retries: {r.text[:200]}")
+                    break
+                # 200/201 = created (may include result if Prefer:wait honoured)
+                # 202 = accepted and queued — poll for result
+                if r.status_code not in (200, 201, 202):
+                    raise ProviderError(
+                        f"Replicate submit failed ({r.status_code}): {r.text[:300]}")
+                pred = r.json()
+                # Poll if not complete yet (model took > 55s to start)
+                if pred.get("status") not in ("succeeded", "failed", "canceled"):
+                    get_url = pred["urls"]["get"]
+                    deadline = time.time() + timeout
+                    while time.time() < deadline:
+                        time.sleep(3)
+                        rp = client.get(get_url,
+                                        headers={"Authorization": f"Bearer {self._token}"})
+                        pred = rp.json()
+                        if pred["status"] in ("succeeded", "failed", "canceled"):
+                            break
+                    else:
+                        raise ProviderError(f"{self.model_id}: prediction timed out")
+                if pred.get("status") != "succeeded":
+                    raise ProviderError(
+                        f"{self.model_id} prediction failed: {pred.get('error')}")
+                return pred["output"]
+        except ProviderError:
+            raise
+        except Exception as e:
+            raise ProviderError(f"{self.model_id} call failed: {e}") from e
+
+    def _fetch(self, url_or_list, suffix: str) -> str:
+        """Download the output URL to a local file and return the path."""
+        url = url_or_list[0] if isinstance(url_or_list, list) else url_or_list
+        try:
+            with httpx.Client(timeout=120) as client:
+                r = client.get(url, headers={"Authorization": f"Bearer {self._token}"})
+                r.raise_for_status()
+            return _stub_file(suffix, r.content)
+        except Exception as e:
+            raise ProviderError(f"{self.model_id}: download failed: {e}") from e
+
+
+class ReplicateImageProvider(_ReplicateBase):
+    def generate(self, prompt, *, width=1024, height=576) -> MediaAsset:
+        out = self._run({"prompt": prompt, "num_outputs": 1,
+                         "width": width, "height": height}, timeout=120)
+        uri = self._fetch(out, ".png")
+        return MediaAsset(uri=uri, mime="image/png", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)
+
+
+class ReplicateVideoProvider(_ReplicateBase):
+    def generate(self, prompt, *, seconds=5.0, fps=8,
+                 init_image=None) -> MediaAsset:
+        # lucataco/animate-diff: prompt + style checkpoint
+        inp: dict = {
+            "prompt": prompt,
+            "path": "toonyou_beta3.safetensors",
+        }
+        out = self._run(inp, timeout=300)
+        uri = self._fetch(out, ".mp4")
+        return MediaAsset(uri=uri, mime="video/mp4", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)
+
+
+class ReplicateTTSProvider(_ReplicateBase):
+    def synthesize(self, text, *, voice_id="af_bella") -> MediaAsset:
+        # Map generic "default" to a valid Kokoro voice
+        voice = voice_id if voice_id != "default" else "af_bella"
+        out = self._run({"text": text, "voice": voice, "speed": 1}, timeout=120)
+        uri = self._fetch(out, ".wav")
+        return MediaAsset(uri=uri, mime="audio/wav", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)
+
+
+class ReplicateMusicProvider(_ReplicateBase):
+    def generate(self, prompt, *, seconds=15.0) -> MediaAsset:
+        out = self._run({
+            "prompt": prompt,
+            "model_version": "stereo-melody-large",
+            "duration": max(1, int(seconds)),
+            "output_format": "wav",
+        }, timeout=180)
+        uri = self._fetch(out, ".wav")
+        return MediaAsset(uri=uri, mime="audio/wav", model_id=self.model_id,
+                          cost_usd=self.est_cost_usd)

@@ -38,3 +38,24 @@ class RateLimiter:
             raise RateLimited((cost - b.tokens) / self.rate)
         b.tokens -= cost
         self._buckets[tenant_id] = b
+
+    async def acheck(self, tenant_id: str, cost: float = 1.0) -> None:
+        """Redis sliding window rate limiter. Falls back to in-process on any error."""
+        try:
+            from shared.cache import get_redis, is_available
+            if await is_available():
+                r = get_redis()
+                key = f"ratelimit:{tenant_id}"
+                pipe = r.pipeline()
+                pipe.incr(key)
+                pipe.expire(key, 2)
+                results = await pipe.execute()
+                count = int(results[0])
+                if count > self.burst:
+                    raise RateLimited(1.0 / self.rate)
+                return
+        except RateLimited:
+            raise
+        except Exception:
+            pass
+        self.check(tenant_id, cost)

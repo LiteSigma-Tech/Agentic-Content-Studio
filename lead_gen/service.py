@@ -29,6 +29,19 @@ from .providers import LeadProvider, MockLeadProvider
 from .scoring import qualify
 
 
+async def _db_available() -> bool:
+    try:
+        from shared.database import is_available
+        return await is_available()
+    except Exception:
+        return False
+
+
+async def _get_pool():
+    from shared.database import get_pool
+    return await get_pool()
+
+
 class LeadGenService:
     def __init__(self, provider: LeadProvider | None = None,
                  runs_root: str = "/tmp/leadgen_runs"):
@@ -164,3 +177,101 @@ class LeadGenService:
         json_path = d / "leads.json"
         json_path.write_text(json.dumps([l.model_dump(mode="json") for l in rows], indent=2))
         return {"count": len(rows), "csv": str(csv_path), "json": str(json_path)}
+
+    # --- async DB persistence -----------------------------------------------
+    async def asave_lead(self, lead) -> None:
+        """Persist lead to DB and update in-memory."""
+        self.leads[lead.id] = lead
+        if not await _db_available():
+            return
+        try:
+            pool = await _get_pool()
+            async with pool.acquire() as conn:
+                status_val = lead.status.value if hasattr(lead.status, 'value') else str(lead.status)
+                await conn.execute(
+                    """INSERT INTO leads(id, lead_json, status, dedupe_key, updated_at)
+                       VALUES($1, $2, $3, $4, now())
+                       ON CONFLICT(id) DO UPDATE SET lead_json=$2, status=$3, dedupe_key=$4, updated_at=now()""",
+                    lead.id, lead.model_dump_json(), status_val, lead.dedupe_key
+                )
+        except Exception:
+            pass
+
+    async def asave_all_leads(self) -> int:
+        """Persist all in-memory leads to DB. Returns count saved."""
+        if not await _db_available():
+            return 0
+        saved = 0
+        for lead in self.leads.values():
+            try:
+                await self.asave_lead(lead)
+                saved += 1
+            except Exception:
+                pass
+        return saved
+
+    async def aload_leads(self) -> int:
+        """Hydrate leads from DB into memory. Returns count."""
+        if not await _db_available():
+            return len(self.leads)
+        try:
+            pool = await _get_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch("SELECT lead_json FROM leads")
+            from .models import Lead
+            for row in rows:
+                try:
+                    lead = Lead.model_validate_json(row['lead_json'])
+                    self.leads[lead.id] = lead
+                except Exception:
+                    pass
+            return len(self.leads)
+        except Exception:
+            return len(self.leads)
+
+    async def asave_suppression(self, email: str, reason: str = "unsubscribed") -> None:
+        """Add to suppression in DB and in-memory."""
+        self.suppression.add_email(email, reason=reason)
+        if not await _db_available():
+            return
+        try:
+            pool = await _get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO suppression_list(email, reason) VALUES($1, $2) ON CONFLICT(email) DO NOTHING",
+                    email.lower(), reason
+                )
+        except Exception:
+            pass
+
+    async def aload_suppression(self) -> int:
+        """Load suppression list from DB. Returns count."""
+        if not await _db_available():
+            return 0
+        try:
+            pool = await _get_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch("SELECT email FROM suppression_list")
+            for row in rows:
+                self.suppression.add_email(row['email'])
+            return len(rows)
+        except Exception:
+            return 0
+
+    async def asave_outreach(self, run_id: str, record) -> None:
+        """Persist outreach record."""
+        self.outreach[run_id] = record
+        if not await _db_available():
+            return
+        try:
+            pool = await _get_pool()
+            async with pool.acquire() as conn:
+                record_json = record.model_dump_json() if hasattr(record, 'model_dump_json') else str(record)
+                await conn.execute(
+                    """INSERT INTO outreach_records(run_id, record_json, updated_at)
+                       VALUES($1, $2, now())
+                       ON CONFLICT(run_id) DO UPDATE SET record_json=$2, updated_at=now()""",
+                    run_id, record_json
+                )
+        except Exception:
+            pass

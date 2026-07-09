@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from model_gateway import (
@@ -23,9 +24,38 @@ from model_gateway import (
 _CFG_PATH = os.getenv("ROUTING_CONFIG", str(Path(__file__).resolve().parent.parent / "routing.yaml"))
 
 app = FastAPI(title="Model Gateway", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:5174").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 registry = build_registry()
 store = ConfigStore.from_yaml(_CFG_PATH)
 router = Router(registry, store)
+
+try:
+    from shared.metrics import add_metrics_endpoint
+    add_metrics_endpoint(app, "gateway")
+except Exception:
+    pass
+
+
+@app.on_event("startup")
+async def _startup():
+    try:
+        from shared.logging_config import configure_logging
+        configure_logging()
+    except Exception:
+        pass
+    # Seed routing config from YAML if DB row doesn't exist
+    try:
+        await store.aseed_if_empty()
+    except Exception:
+        pass
 
 
 # --- request models ---------------------------------------------------------

@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 
 suites=(
   "tests/test_gateway.py"
+  "tests/test_integration.py"
   "agent_runtime/tests_agent_runtime.py"
   "video_studio/tests_video_pipeline.py"
   "audio_studio/tests_audio_pipeline.py"

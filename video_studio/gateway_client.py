@@ -89,7 +89,8 @@ class HttpGateway(Gateway):
         self.base = base_url.rstrip("/")
 
     def _post(self, path, payload):
-        r = self._httpx.post(f"{self.base}{path}", json=payload, timeout=300)
+        # 900s — local LLMs (qwen2.5:7b on CPU) can take 10+ min for long outputs
+        r = self._httpx.post(f"{self.base}{path}", json=payload, timeout=900)
         r.raise_for_status()
         d = r.json()
         res = d["result"]

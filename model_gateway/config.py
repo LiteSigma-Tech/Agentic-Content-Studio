@@ -64,3 +64,51 @@ class ConfigStore:
 
     def set(self, cfg: RoutingConfig) -> None:
         self._cfg = cfg
+
+    async def aget(self) -> "RoutingConfig":
+        """Load config from DB if available, else return in-memory config."""
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow("SELECT config_json FROM routing_config WHERE id=1")
+                    if row:
+                        return RoutingConfig.model_validate_json(row['config_json'])
+        except Exception:
+            pass
+        return self._cfg
+
+    async def aset(self, cfg: "RoutingConfig") -> None:
+        """Update config in-memory and persist to DB."""
+        self._cfg = cfg
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        """INSERT INTO routing_config(id, config_json, updated_at)
+                           VALUES(1, $1, now())
+                           ON CONFLICT(id) DO UPDATE SET config_json=$1, updated_at=now()""",
+                        cfg.model_dump_json()
+                    )
+        except Exception:
+            pass
+
+    async def aseed_if_empty(self) -> None:
+        """On startup: insert the YAML config if no DB row exists yet."""
+        try:
+            from shared.database import get_pool, is_available
+            if not await is_available():
+                return
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT id FROM routing_config WHERE id=1")
+                if not row:
+                    await conn.execute(
+                        "INSERT INTO routing_config(id, config_json) VALUES(1, $1)",
+                        self._cfg.model_dump_json()
+                    )
+        except Exception:
+            pass

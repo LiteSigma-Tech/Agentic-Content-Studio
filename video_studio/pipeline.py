@@ -86,5 +86,7 @@ class Pipeline:
             "id": p.id, "title": p.title, "genre": p.genre.value,
             "total_cost_usd": p.pipeline.total_cost_usd,
             "final_uri": p.final_uri, "manifest_uri": p.manifest_uri,
+            "final_av_uri": getattr(p, "final_av_uri", None),
+            "master_audio_uri": getattr(p, "master_audio_uri", None),
             "stages": [s.model_dump() for s in p.pipeline.stages],
         }

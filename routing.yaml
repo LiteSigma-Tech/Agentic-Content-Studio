@@ -1,26 +1,55 @@
 # Routing config — change this and the NEXT job uses the new model. No redeploy.
-# model_ids must match providers registered in bootstrap.py (GET /v1/providers).
 #
-# Ships pointing at offline mocks so it runs with zero setup. To go real+free:
-#   - run Ollama and set OLLAMA_HOST   -> swap llm models to ollama/...
-#   - run ComfyUI and set COMFYUI_URL  -> swap media models to comfyui/...
-#   - set OPENROUTER_API_KEY           -> use openrouter/...:free as fallback
+# Mock fallbacks have been intentionally removed. When all providers in a chain
+# fail, the router raises NoEligibleProvider → gateway returns 409 → the pipeline
+# stage is marked "failed" and stops. Re-run the project to resume from the
+# failed stage — the checkpoint system retries only the failed step.
+#
+# Provider auto-registration (bootstrap.py registers a provider only when its
+# env var is set):
+#   OLLAMA_HOST=http://host.docker.internal:11434  -> ollama/* models active
+#   OPENROUTER_API_KEY=sk-or-...                   -> openrouter/* models active
+#   COMFYUI_URL=http://host.docker.internal:8188   -> comfyui/* models active
+#   AWS_BEDROCK_REGION=us-east-1 + credentials     -> bedrock/* models active
+#   REPLICATE_API_TOKEN=r8_...                     -> replicate/* models active
+#   HF_API_TOKEN=hf_...                            -> hf/* models active
 
 routing:
   llm:
-    # Per-task LLM selection: a 'require' list filters to capable models only.
-    script_writing:  { default: "mock/echo-llm", fallbacks: [] }
-    agent_reasoning: { default: "mock/echo-llm", require: ["function_calling"] }
-    kids_content:    { default: "mock/echo-llm", require: ["moderation_ok"] }   # stricter
+    script_writing:
+      default: "bedrock/claude-haiku"
+      fallbacks: ["ollama/qwen2.5:7b", "openrouter/qwen-2.5-72b:free", "hf/mistral-7b"]
+
+    agent_reasoning:
+      default: "bedrock/claude-sonnet"
+      require: ["function_calling"]
+      fallbacks: ["bedrock/claude-haiku", "ollama/qwen2.5:7b"]
+
+    kids_content:
+      default: "bedrock/claude-haiku"
+      require: ["moderation_ok"]
+      fallbacks: ["ollama/qwen2.5:7b"]
+
   image:
-    default: { default: "mock/image" }
+    default:
+      default: "replicate/flux-schnell"
+      fallbacks: ["hf/flux-schnell", "comfyui/flux-schnell"]
+
   video:
-    default: { default: "mock/video" }
+    default:
+      default: "replicate/animate-diff"
+      fallbacks: ["comfyui/ltx-video"]
+
   tts:
-    default: { default: "mock/tts" }
+    default:
+      default: "deepgram/aura-2"
+      fallbacks: ["replicate/kokoro", "comfyui/kokoro"]
+
   music:
-    default: { default: "mock/music" }
+    default:
+      default: "replicate/musicgen"
+      fallbacks: ["comfyui/musicgen"]
 
 policy:
-  max_cost_per_job_usd: 0.0   # 0.0 => free-only. Raise to permit paid fallbacks.
-  prefer: "route_order"       # route_order | cheapest | fastest | best_quality
+  max_cost_per_job_usd: 0.10
+  prefer: "route_order"

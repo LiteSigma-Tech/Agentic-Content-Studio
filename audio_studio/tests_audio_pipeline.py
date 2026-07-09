@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
+
+# Skip the entire suite when ffmpeg/ffprobe are not installed.
+if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+    print("0 tests passed.  (ffmpeg not installed — skipping audio pipeline tests)")
+    sys.exit(0)
 
 from audio_studio.pipeline import FULL_STAGES, full_pipeline  # noqa: E402
 from video_studio.gateway_client import InProcessGateway  # noqa: E402

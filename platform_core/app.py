@@ -9,16 +9,20 @@ Request lifecycle:
 """
 from __future__ import annotations
 
+import hmac
+import os
 import time
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from .metering import QuotaExceeded, UsageMeter
 from .observability import EventLog, context, new_request_id, set_tenant
 from .ratelimit import RateLimited, RateLimiter
 from .rbac import Perm
-from .tenancy import AuthError, Principal, TenantStore
+from .tenancy import AuthError, Principal, TenantStore, issue_token
 
 
 class Platform:
@@ -43,6 +47,45 @@ class Platform:
 
 platform = Platform()
 app = FastAPI(title="Platform", version="0.1.0")
+
+
+# --- middleware: request body size limit -------------------------------------
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > 10 * 1024 * 1024:
+        return JSONResponse({"detail": "Request body too large (max 10MB)"}, status_code=413)
+    return await call_next(request)
+
+
+# --- CORS middleware ----------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://localhost:5174"
+    ).split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- metrics endpoint --------------------------------------------------------
+try:
+    from shared.metrics import add_metrics_endpoint
+    add_metrics_endpoint(app, "platform")
+except Exception:
+    pass
+
+
+# --- startup event -----------------------------------------------------------
+@app.on_event("startup")
+async def _startup():
+    try:
+        from shared.logging_config import configure_logging
+        configure_logging()
+    except Exception:
+        pass
 
 
 # --- dependency factory: auth -> rate limit -> tenant ctx -> permission ------
@@ -85,10 +128,27 @@ class NewTenant(BaseModel):
     plan: str = "free"
 
 
+def _check_bootstrap(request: Request) -> None:
+    """Validate the ADMIN_BOOTSTRAP_TOKEN. Raises 403 if wrong or unset."""
+    token = os.environ.get("ADMIN_BOOTSTRAP_TOKEN", "").strip()
+    if not token:
+        raise HTTPException(403, "tenant bootstrap is disabled — set ADMIN_BOOTSTRAP_TOKEN")
+    provided = request.headers.get("authorization", "")
+    if provided.lower().startswith("bearer "):
+        provided = provided[7:].strip()
+    if not provided or not hmac.compare_digest(provided, token):
+        raise HTTPException(403, "invalid ADMIN_BOOTSTRAP_TOKEN")
+
+
 @app.post("/admin/tenants")
-def create_tenant(req: NewTenant):
-    """Bootstrap a tenant with an admin user + API key. In production this sits
-    behind platform-admin auth / a signup flow."""
+def create_tenant(req: NewTenant, request: Request):
+    """Bootstrap a tenant with an admin user + API key.
+
+    Requires ``Authorization: Bearer <ADMIN_BOOTSTRAP_TOKEN>`` — a static secret
+    set via the environment variable.  Set it to a strong random value in
+    production (e.g. ``openssl rand -hex 32``) and keep it out of logs.
+    """
+    _check_bootstrap(request)
     t = platform.store.create_tenant(req.name, plan=req.plan)
     platform.store.create_user(t.id, req.admin_email, req.admin_password, role="admin")
     _, key = platform.store.issue_api_key(t.id, role="admin")
@@ -97,17 +157,65 @@ def create_tenant(req: NewTenant):
             "note": "store this key now — it is not shown again"}
 
 
+@app.get("/admin/tenants")
+def list_tenants(p: Principal = Depends(Require(Perm.ADMIN))):
+    """List all tenants (admin only). Includes in-memory tenants; DB is source of
+    truth when DATABASE_URL is set."""
+    tenants = [
+        {"id": t.id, "name": t.name, "plan": t.plan,
+         "cost_cap_usd": t.cost_cap_usd, "job_cap": t.job_cap}
+        for t in platform.store.tenants.values()
+    ]
+    return {"tenants": tenants, "total": len(tenants)}
+
+
 class Login(BaseModel):
     email: str
     password: str
 
 
 @app.post("/v1/login")
-def login(req: Login):
+async def login(req: Login):
     try:
-        return {"token": platform.store.login(req.email, req.password), "token_type": "bearer"}
+        token, refresh = await platform.store.alogin(req.email, req.password)
+        return {"token": token, "refresh_token": refresh, "token_type": "bearer"}
     except AuthError as e:
         raise HTTPException(401, str(e))
+
+
+class RefreshReq(BaseModel):
+    refresh_token: str
+
+
+@app.post("/v1/refresh")
+async def refresh_token_endpoint(req: RefreshReq):
+    try:
+        claims = await platform.store.ause_refresh_token(req.refresh_token)
+        new_token = issue_token(
+            {"sub": claims["user_id"], "tid": claims["tenant_id"],
+             "role": claims["role"], "kind": "user"},
+            platform.store.signing_key
+        )
+        new_refresh = await platform.store.aissue_refresh_token(
+            claims["user_id"], claims["tenant_id"], claims["role"]
+        )
+        return {"token": new_token, "refresh_token": new_refresh, "token_type": "bearer"}
+    except AuthError as e:
+        raise HTTPException(401, str(e))
+
+
+class LogoutReq(BaseModel):
+    refresh_token: str = ""
+
+
+@app.post("/v1/logout")
+async def logout_endpoint(req: LogoutReq):
+    if req.refresh_token:
+        try:
+            await platform.store.ause_refresh_token(req.refresh_token)
+        except Exception:
+            pass
+    return {"status": "logged_out"}
 
 
 @app.get("/v1/whoami")

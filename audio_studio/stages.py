@@ -39,8 +39,15 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
     out_dir = _audio_dir(ctx)
     cost, model = 0.0, ""
     for sh in project.all_shots():
-        if sh.dialogue_audio_uri or not sh.dialogue:
+        if not sh.dialogue:
             continue
+        # Skip only if the file exists AND is a real WAV (RIFF header).
+        # Re-run if the file is missing or was an MP3 copied with a .wav extension.
+        if sh.dialogue_audio_uri:
+            p = Path(sh.dialogue_audio_uri)
+            if p.exists() and p.read_bytes()[:4] == b"RIFF":
+                continue
+            sh.dialogue_audio_uri = None  # clear stale/invalid URI
         text = " ".join(ln.text for ln in sh.dialogue if ln.text).strip() or "..."
         speaker = sh.dialogue[0].character
         voice_id = project.voice_cast.get(speaker, "vo_narrator")
@@ -52,7 +59,8 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
 
         dst = out_dir / f"dlg_{sh.id}.wav"
         if synth.is_real_audio(res.uri):
-            dst.write_bytes(Path(res.uri).read_bytes())
+            # Convert to WAV with normalised sample rate — handles MP3/WAV/any format.
+            synth._ff(["-i", res.uri, "-ac", "2", "-ar", str(synth._SR), str(dst)])
         else:
             seconds = synth.estimate_speech_seconds(text, sh.seconds)
             synth.synth_speech(text, voices.get(voice_id), seconds, dst)
@@ -62,7 +70,10 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
 
 def generate_music(project: Project, ctx: StageContext) -> tuple[str, float]:
     if project.music_uri:
-        return "cached", 0.0
+        p = Path(project.music_uri)
+        if p.exists() and p.read_bytes()[:4] == b"RIFF":
+            return "cached", 0.0
+        project.music_uri = None  # re-generate if missing or wrong format
     tpl = template_for(project.genre)
     total = sum(sh.seconds for sh in project.all_shots()) or 5.0
     res = ctx.gw.music("default",
@@ -70,7 +81,8 @@ def generate_music(project: Project, ctx: StageContext) -> tuple[str, float]:
                        seconds=total, required_caps=tpl.required_caps)
     dst = _audio_dir(ctx) / "music_bed.wav"
     if synth.is_real_audio(res.uri):
-        dst.write_bytes(Path(res.uri).read_bytes())
+        # Convert to WAV — handles MP3/WAV from any music provider.
+        synth._ff(["-i", res.uri, "-ac", "2", "-ar", str(synth._SR), str(dst)])
     else:
         synth.synth_music(total, dst)
     project.music_uri = str(dst)

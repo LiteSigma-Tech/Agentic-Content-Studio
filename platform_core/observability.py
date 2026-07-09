@@ -10,6 +10,12 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+try:
+    from shared.logging_config import get_logger as _get_struct_logger
+    _slog = _get_struct_logger("platform_core.events")
+except Exception:
+    _slog = None
+
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _tenant_id: ContextVar[str] = ContextVar("tenant_id", default="-")
 
@@ -40,6 +46,11 @@ class EventLog:
         self.events.append(rec)
         if len(self.events) > self.capacity:
             self.events = self.events[-self.capacity:]
+        if _slog:
+            try:
+                _slog.info(event, **fields)
+            except Exception:
+                pass
         return rec
 
     @contextmanager

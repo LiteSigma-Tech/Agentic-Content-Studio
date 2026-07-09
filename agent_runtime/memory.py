@@ -49,3 +49,42 @@ class MemoryStore:
 
     def size(self, namespace: str) -> int:
         return len(self._ns.get(namespace, []))
+
+    async def aremember(self, namespace: str, text: str, meta: dict | None = None) -> None:
+        """Store in memory and persist to Postgres."""
+        self.remember(namespace, text, meta)  # always update in-memory
+        import json
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "INSERT INTO agent_memory(namespace, text, meta_json) VALUES($1, $2, $3)",
+                        namespace, text, json.dumps(meta or {})
+                    )
+        except Exception:
+            pass
+
+    async def aload_namespace(self, namespace: str) -> int:
+        """Hydrate a namespace from Postgres into memory. Returns count of items loaded."""
+        import json
+        try:
+            from shared.database import get_pool, is_available
+            if not await is_available():
+                return 0
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT text, meta_json FROM agent_memory WHERE namespace=$1 ORDER BY created_at",
+                    namespace
+                )
+            existing_texts = {item.text for _, item in self._ns.get(namespace, [])}
+            for row in rows:
+                if row['text'] not in existing_texts:
+                    vec = _vec(row['text'])
+                    item = MemoryItem(row['text'], json.loads(row['meta_json']))
+                    self._ns.setdefault(namespace, []).append((vec, item))
+            return len(rows)
+        except Exception:
+            return 0

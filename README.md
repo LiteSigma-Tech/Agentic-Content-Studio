@@ -11,20 +11,28 @@ real model backends and the same code runs live.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  frontend            operator console over all of it  (React prototype)│
+│  frontend            operator console over all of it  (Vite + React) │
 ├──────────────────────────────────────────────────────────────────────┤
-│  platform_core       auth · tenancy · RBAC · metering · quotas ·       │
-│                      rate limiting · observability            (B0–B1)  │
-├───────────────┬───────────────┬───────────────┬───────────────────────┤
-│ video_studio  │ audio_studio  │ lead_gen      │ agent_runtime          │
-│ concept →     │ + voices,     │ compliant     │ tools · HITL · memory  │
-│ silent ep.    │ music, mix →  │ funnel +      │ guardrails · durable   │
-│ (B4)          │ final A/V (B5)│ approval-gated│ runs            (B2)   │
-│               │               │ outreach (B3) │                        │
-├───────────────┴───────────────┴───────────────┴───────────────────────┤
-│  model_gateway       one interface for LLM/image/video/TTS/music;      │
-│                      config-driven routing, fallback, free-only,        │
-│                      capability gating, per-call cost capture           │
+│  nginx               reverse proxy — single public entry point (80)  │
+├──────────────────────────────────────────────────────────────────────┤
+│  platform_core       auth · tenancy · RBAC · metering · quotas ·     │
+│                      rate limiting · observability                    │
+├───────────────┬───────────────┬───────────────┬──────────────────────┤
+│ video_studio  │ audio_studio  │ lead_gen      │ agent_runtime         │
+│ concept →     │ + voices,     │ compliant     │ tools · HITL · memory │
+│ silent ep.    │ music, mix →  │ funnel +      │ guardrails · durable  │
+│               │ final A/V     │ approval-gated│ runs                  │
+│               │               │ outreach      │                       │
+├───────────────┴───────────────┴───────────────┴──────────────────────┤
+│  model_gateway       one interface for LLM/image/video/TTS/music;    │
+│                      config-driven routing, fallback, free-only,      │
+│                      capability gating, per-call cost capture         │
+├──────────────────────────────────────────────────────────────────────┤
+│  worker (ARQ)        background task processor — studio pipelines     │
+│                      and agent runs via Redis queue                   │
+├──────────────────────────────────────────────────────────────────────┤
+│  Postgres 16         durable state — tenants, runs, leads, projects  │
+│  Redis 7             rate-limit buckets · ARQ job queue              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -32,7 +40,7 @@ real model backends and the same code runs live.
 
 ```bash
 pip install -r requirements.txt        # ffmpeg + ffprobe also required for media
-./run_all_tests.sh                     # 41 tests across all six backend slices
+./run_all_tests.sh                     # 85 tests across seven suites
 python demo_e2e.py                     # one narrated flow through every slice
 ```
 
@@ -48,51 +56,83 @@ uvicorn agent_runtime.api:app --reload     # the agent runtime
 uvicorn platform_core.app:app --reload     # auth / metering / quotas
 ```
 
-The frontend (`frontend/PlatformConsole.jsx`) is an interactive React prototype of
-the operator UI; it renders the dashboard, studio pipeline, lead approval inbox,
-and model-settings screen against mock state mirroring these APIs.
+The frontend (`frontend-app/`) is a full Vite + React app with JWT auth,
+TanStack Query, and an Admin tab for tenant management. It serves the dashboard,
+studio pipeline, lead approval inbox, model-settings screen, and webhook
+management against the live APIs.
 
 ## Run with Docker
 
 ```bash
+cp .env.example .env       # fill in secrets (see below)
 docker compose up --build
 ```
 
-Five services come up from one shared image (ffmpeg included):
+All services start from one shared image. The public entry point is nginx on
+**port 80** — it routes `/api/gateway/`, `/api/studio/`, `/api/leads/`,
+`/api/agents/`, `/api/platform/` to the respective backend, and `/` to the
+frontend. Backend service ports are bound to `127.0.0.1` only (localhost dev
+access, not public):
 
-| Service | URL (docs at `/docs`) | Notes |
+| Service | Dev URL | Notes |
 |---|---|---|
-| gateway | http://localhost:8001 | the model gateway |
-| studio | http://localhost:8002 | video + audio; routes models via the gateway |
+| **nginx** | http://localhost | public entry point — use this in production |
+| gateway | http://localhost:8001 | model gateway |
+| studio | http://localhost:8002 | video + audio; routes models via gateway |
 | leads | http://localhost:8003 | lead generation |
-| agents | http://localhost:8004 | the agent runtime |
+| agents | http://localhost:8004 | agent runtime + webhook delivery |
 | platform | http://localhost:8005 | auth · metering · quotas |
+| frontend | http://localhost:3000 | React console (also at http://localhost/) |
 
-The `studio` and `agents` containers route their model calls to the `gateway`
-container over HTTP (`GATEWAY_URL=http://gateway:8000`), and `studio` shares the
-gateway's media volume so generated keyframes/clips/audio resolve across
-containers — a real end-to-end render flows gateway → studio. Compose waits for
-the gateway's healthcheck before starting dependents; named volumes persist
-rendered episodes and durable agent/outreach runs.
+The `studio`, `agents`, and `worker` containers route model calls to the
+`gateway` over HTTP and share volumes so generated media resolves across
+containers. The `worker` service (ARQ) picks up background studio pipeline and
+agent run jobs from the Redis queue — long-running tasks no longer block HTTP
+workers.
 
-Set `PLATFORM_SIGNING_KEY` to a stable value in any real deployment so tokens
-survive restarts. The production frontend is a separate Next.js image (the file
-in `./frontend` is a prototype, not a built app) — a commented stub in
-`docker-compose.yml` shows where it slots in.
+### Required secrets (`.env`)
+
+Copy `.env.example` to `.env` and set these before starting in production:
+
+| Variable | Purpose | Generate with |
+|---|---|---|
+| `PLATFORM_SIGNING_KEY` | JWT signing key — tokens are invalidated if changed | `openssl rand -hex 32` |
+| `ADMIN_BOOTSTRAP_TOKEN` | Bearer token required by `POST /admin/tenants` — leave blank to disable | `openssl rand -hex 32` |
+| `POSTGRES_PASSWORD` | Postgres superuser password | `openssl rand -hex 24` |
+| `REDIS_PASSWORD` | Optional Redis auth — omit for dev, set in prod | `openssl rand -hex 24` |
+| `CORS_ORIGINS` | Comma-separated allowed frontend origins | your production domain |
+
+### Bootstrap the first tenant
+
+Once the stack is up, create your first tenant with the bootstrap token:
+
+```bash
+curl -X POST http://localhost:8005/admin/tenants \
+  -H "Authorization: Bearer <ADMIN_BOOTSTRAP_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Acme", "admin_email": "admin@acme.com", "admin_password": "...", "plan": "free"}'
+```
+
+The response includes a one-time API key. After that, use `POST /v1/login` for
+regular JWT-based auth. Additional tenants can be created from the Admin tab in
+the console (admin role only).
 
 ## The packages
 
-| Package | Phase | What it is | Tests |
-|---|---|---|---|
-| `model_gateway` | B1 | Swappable, free-first model layer; routing, fallback, capability gating, cost capture | 6 |
-| `agent_runtime` | B2 | Tool-using agent loop; HITL approval, memory, guardrails, durable runs, tracing | 8 |
-| `video_studio` | B4 | Concept → script → shots → keyframes → clips → silent episode | 4 |
-| `audio_studio` | B5 | Voices, dialogue, music, ducked mix, mux → finished A/V (composes B4) | 5 |
-| `lead_gen` | B3 | Source → enrich → score → **compliance gate** → approval-gated outreach (on B2) | 8 |
-| `platform_core` | B0–B1 | Auth, multi-tenancy, RBAC, usage metering + quotas, rate limit, observability | 10 |
-| `frontend` | F0–F5 | Operator console (React prototype) | — |
+| Package | What it is | Tests |
+|---|---|---|
+| `model_gateway` | Swappable, free-first model layer; routing, fallback, capability gating, cost capture | 6 |
+| `agent_runtime` | Tool-using agent loop; HITL approval, memory, guardrails, durable runs, tracing, webhook delivery | 8 |
+| `video_studio` | Concept → script → shots → keyframes → clips → silent episode | 4 |
+| `audio_studio` | Voices, dialogue, music, ducked mix, mux → finished A/V (composes video_studio) | 5* |
+| `lead_gen` | Source → enrich → score → compliance gate → approval-gated outreach | 8 |
+| `platform_core` | Auth, multi-tenancy, RBAC, usage metering + quotas, rate limit, observability | 10 |
+| Integration | HTTP-layer tests across all four service APIs + webhook unit tests | 49 |
 
-Each package has its own README with details and an API.
+\* audio_studio tests require `ffmpeg`/`ffprobe`; they are skipped gracefully when absent.
+
+Each package has its own README with details and an API reference at `/docs` when
+the service is running.
 
 ## Themes that run through every slice
 
@@ -100,10 +140,14 @@ Each package has its own README with details and an API.
   gateway's config decides the model. `max_cost_per_job_usd: 0` enforces
   free-only; raise it to allow paid fallback. Nothing in product code names a model.
 - **Durable & resumable.** Pipelines and agent runs checkpoint after every step
-  and resume from failure (maps onto Temporal in production).
+  (to Postgres when available, disk otherwise) and resume from failure. Long-running
+  jobs are offloaded to the ARQ worker so HTTP workers stay responsive.
 - **Human-in-the-loop.** Side-effecting actions (notably outreach sends) pause for
   approval; the agent runtime provides the gate, lead-gen uses it, the console
   surfaces it as an inbox.
+- **Webhook notifications.** Register HTTP endpoints on `POST /v1/webhooks`;
+  the agent runtime delivers HMAC-signed payloads on `run.done` / `run.failed`
+  with automatic retry.
 - **Child safety by routing.** Kids' content routes through a moderation-gated
   path so only models flagged `moderation_ok` can produce script, dialogue, music.
 - **Compliance as a gate.** Lead outreach checks suppression, consent, region, and
@@ -111,20 +155,34 @@ Each package has its own README with details and an API.
 - **Multi-tenant + metered.** Every billable action rolls up to a tenant bill with
   spend/job quotas; requests are authenticated, permissioned, rate-limited, traced.
 
-## What's real vs. what's infrastructure to add
+## What's wired vs. what to extend for scale
 
-Real and tested here: all the **logic** — routing/fallback/cost, the staged
-pipelines, the agent loop with HITL/guardrails/memory, the lead funnel and
-compliance gates, and the auth/RBAC/metering layer — 41 passing offline tests
-plus an end-to-end demo.
+Fully wired and tested:
 
-Deliberately mocked / left as infrastructure (flags, not hidden gaps):
-- **Models** are mocked behind the gateway; wire Ollama / OpenRouter / ComfyUI etc.
-- **Auth** is a minimal correct implementation; use a vetted IdP/JWT lib in prod.
-- **State** is in-memory / on-disk JSON; use Postgres + Redis in prod.
-- **Durable queue** is per-slice checkpoint stores; use Temporal in prod.
-- **Frontend** is a clickable prototype; the production app is Next.js + TanStack
-  Query + a WebSocket/SSE client on the same design tokens.
+- **Auth & tenancy** — PBKDF2 passwords, HMAC-signed JWT, refresh tokens (7-day,
+  rotated), API keys, RBAC, rate limiting, quota enforcement.
+- **Persistence** — Postgres 16 for tenants/runs/leads/projects; Redis 7 for rate
+  buckets and the ARQ job queue. All stores fall back to disk/memory when
+  `DATABASE_URL` is unset (keeps offline tests fast).
+- **Background jobs** — ARQ worker handles studio pipelines and agent runs.
+  `?background=true` on any run endpoint enqueues to Redis; falls back to
+  `asyncio` task if Redis is unavailable.
+- **Observability** — Structured logs (structlog), Prometheus metrics on `/metrics`
+  per service, per-request IDs, tenant context in every span.
+- **Frontend** — Full Vite+React console with JWT auth, auto-refresh on 401,
+  TanStack Query caching, and an Admin tab (tenant list + create, webhook
+  management) visible to admin-role users.
+
+Deliberately thin / extension points:
+
+- **Models** are mocked behind the gateway; wire Ollama / OpenRouter / Bedrock /
+  ComfyUI by adding a provider in `model_gateway/providers/`.
+- **Durable orchestration** — ARQ is the queue; Temporal would add workflow
+  durability, retries, and visibility for very long pipelines.
+- **Kubernetes** — Docker Compose is the current target; Helm charts or Kustomize
+  manifests are the natural next step for horizontal scaling.
+- **Email / SMS delivery** — outreach approval triggers a stub; wire an ESP
+  (SendGrid, Postmark) behind the `send_email` tool.
 
 ## Legal note
 

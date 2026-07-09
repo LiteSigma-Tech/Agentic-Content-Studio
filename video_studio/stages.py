@@ -83,8 +83,8 @@ def _parse_episode(data: dict, project: Project) -> tuple[Episode, list[Characte
                 shots.append(Shot(id=sh.get("id", f"S{j}_{k}"),
                                   description=sh["description"],
                                   dialogue=dlg, characters=chars,
-                                  seconds=float(sh.get("seconds",
-                                                template_for(project.genre).shot_seconds))))
+                                  seconds=max(4.0, float(sh.get("seconds",
+                                              template_for(project.genre).shot_seconds)))))
             scenes.append(Scene(id=sc.get("id", f"SC{j}"),
                                 setting=sc.get("setting", ""), shots=shots))
         if not scenes:
@@ -102,14 +102,33 @@ def _parse_episode(data: dict, project: Project) -> tuple[Episode, list[Characte
 def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
     tpl = template_for(project.genre)
     project.style_prompt = tpl.style_prompt
-    prompt = (
-        f"You are a TV writer. Write episode 1 of a {project.genre.value} series.\n"
-        f"Premise: {project.concept}\nTone: {tpl.tone}\n"
-        f"Structure it across these beats: {', '.join(tpl.beats)}.\n"
-        f"Safety: {tpl.safety_notes}\n"
-        "Respond ONLY with JSON of shape: {title, logline, scenes:[{id,setting,"
-        "shots:[{id,description,seconds,characters:[..],dialogue:[{character,text}]}]}]}"
-    )
+
+    # If concept is a detailed script (> 300 chars), convert it to shot JSON
+    # instead of generating a new script from scratch.
+    if len(project.concept) > 300:
+        prompt = (
+            f"You are a TV production assistant. Convert this script into episode JSON.\n"
+            f"Genre: {project.genre.value}. Safety: {tpl.safety_notes}\n\n"
+            f"SCRIPT:\n{project.concept}\n\n"
+            "Instructions:\n"
+            "- Extract 8-15 key visual moments as shots\n"
+            "- Each shot must be exactly 5 seconds (seconds=5)\n"
+            "- Keep dialogue exactly as written in the script\n"
+            "- Group related shots into scenes by location\n"
+            "Respond ONLY with JSON of shape: {title, logline, scenes:[{id,setting,"
+            "shots:[{id,description,seconds,characters:[..],dialogue:[{character,text}]}]}]}"
+        )
+    else:
+        prompt = (
+            f"You are a TV writer. Write episode 1 of a {project.genre.value} series.\n"
+            f"Premise: {project.concept}\nTone: {tpl.tone}\n"
+            f"Structure it across these beats: {', '.join(tpl.beats)}.\n"
+            f"Safety: {tpl.safety_notes}\n"
+            "IMPORTANT: Use exactly 1 scene with exactly 5 shots. Each shot must be "
+            "exactly 5 seconds (seconds=5). No exceptions.\n"
+            "Respond ONLY with JSON of shape: {title, logline, scenes:[{id,setting,"
+            "shots:[{id,description,seconds,characters:[..],dialogue:[{character,text}]}]}]}"
+        )
     res = ctx.gw.llm(tpl.llm_task, [{"role": "user", "content": prompt}],
                      json_mode=True, required_caps=tpl.required_caps)
 
