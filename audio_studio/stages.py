@@ -41,29 +41,36 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
     for sh in project.all_shots():
         if not sh.dialogue:
             continue
-        # Skip only if the file exists AND is a real WAV (RIFF header).
-        # Re-run if the file is missing or was an MP3 copied with a .wav extension.
+        # Skip only if the combined shot audio is already a valid WAV (RIFF header).
         if sh.dialogue_audio_uri:
             p = Path(sh.dialogue_audio_uri)
             if p.exists() and p.read_bytes()[:4] == b"RIFF":
                 continue
             sh.dialogue_audio_uri = None  # clear stale/invalid URI
-        text = " ".join(ln.text for ln in sh.dialogue if ln.text).strip() or "..."
-        speaker = sh.dialogue[0].character
-        voice_id = project.voice_cast.get(speaker, "vo_narrator")
 
-        # Route through the gateway (real TTS provider would return audio here).
-        res = ctx.gw.tts("default", text, voice_id=voice_id,
-                         required_caps=tpl.required_caps)
-        model, cost = res.model_used, cost + res.cost_usd
+        # One TTS call per Line so each character speaks in their own voice.
+        line_paths: list[Path] = []
+        secs_per_line = sh.seconds / max(1, len(sh.dialogue))
+        for i, ln in enumerate(sh.dialogue):
+            if not ln.text.strip():
+                continue
+            voice_id = project.voice_cast.get(ln.character, "vo_narrator")
+            res = ctx.gw.tts("default", ln.text, voice_id=voice_id,
+                             required_caps=tpl.required_caps)
+            model, cost = res.model_used, cost + res.cost_usd
 
+            line_dst = out_dir / f"dlg_{sh.id}_L{i}.wav"
+            if synth.is_real_audio(res.uri):
+                synth._ff(["-i", res.uri, "-ac", "2", "-ar", str(synth._SR), str(line_dst)])
+            else:
+                seconds = synth.estimate_speech_seconds(ln.text, secs_per_line)
+                synth.synth_speech(ln.text, voices.get(voice_id), seconds, line_dst)
+            line_paths.append(line_dst)
+
+        if not line_paths:
+            continue
         dst = out_dir / f"dlg_{sh.id}.wav"
-        if synth.is_real_audio(res.uri):
-            # Convert to WAV with normalised sample rate — handles MP3/WAV/any format.
-            synth._ff(["-i", res.uri, "-ac", "2", "-ar", str(synth._SR), str(dst)])
-        else:
-            seconds = synth.estimate_speech_seconds(text, sh.seconds)
-            synth.synth_speech(text, voices.get(voice_id), seconds, dst)
+        synth.concat_audio(line_paths, dst)
         sh.dialogue_audio_uri = str(dst)
     return model or "n/a", cost
 

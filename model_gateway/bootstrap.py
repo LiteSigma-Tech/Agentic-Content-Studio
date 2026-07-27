@@ -15,6 +15,8 @@ from .providers.media import (
     ReplicateTTSProvider, ReplicateMusicProvider,
     HuggingFaceImageProvider, HuggingFaceTTSProvider, HuggingFaceMusicProvider,
     DeepgramTTSProvider,
+    KlingVideoProvider, HunyuanVideoProvider, MochiVideoProvider,
+    RunwayMLVideoProvider, LumaVideoProvider,
 )
 from .registry import Registry
 
@@ -92,6 +94,20 @@ def build_registry() -> Registry:
             "replicate/flux-schnell", "black-forest-labs/flux-schnell",
             replicate_token, {Cap.MODERATION_OK},
             est_cost_usd=0.005, est_latency_s=10.0, quality=8))
+        # Video providers — registered best-quality first so routing.yaml
+        # "route_order" naturally falls through in quality order.
+        reg.register("video", KlingVideoProvider(
+            "replicate/kling", "kwai-kolors/kling-video",
+            replicate_token, {Cap.IMAGE_INIT, Cap.MODERATION_OK},
+            est_cost_usd=0.028, est_latency_s=90.0, quality=8))
+        reg.register("video", HunyuanVideoProvider(
+            "replicate/hunyuan", "tencent/hunyuan-video",
+            replicate_token, {Cap.MODERATION_OK},
+            est_cost_usd=0.035, est_latency_s=180.0, quality=8))
+        reg.register("video", MochiVideoProvider(
+            "replicate/mochi", "genmoai/mochi-1",
+            replicate_token, {Cap.MODERATION_OK},
+            est_cost_usd=0.015, est_latency_s=120.0, quality=7))
         reg.register("video", ReplicateVideoProvider(
             "replicate/animate-diff", "lucataco/animate-diff",
             replicate_token, {Cap.MODERATION_OK},
@@ -107,6 +123,16 @@ def build_registry() -> Registry:
             replicate_token, {Cap.MODERATION_OK},
             est_cost_usd=0.01, est_latency_s=30.0, quality=7,
             version="671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb"))
+
+    # Runway Gen-4 Turbo — best quality, requires RUNWAYML_API_KEY.
+    runway_key = os.getenv("RUNWAYML_API_KEY")
+    if runway_key:
+        reg.register("video", RunwayMLVideoProvider(runway_key, "gen4_turbo"))
+
+    # Luma Dream Machine — cinematic quality, requires LUMAAI_API_KEY.
+    luma_key = os.getenv("LUMAAI_API_KEY")
+    if luma_key:
+        reg.register("video", LumaVideoProvider(luma_key))
 
     # Self-hosted ComfyUI media backends.
     comfy = os.getenv("COMFYUI_URL")

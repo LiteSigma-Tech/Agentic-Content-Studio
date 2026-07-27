@@ -98,6 +98,17 @@ def mix_master(music: str, dialogue: list[tuple[float, str]], total_s: float,
              "-t", f"{total_s:.2f}", "-ac", "2", "-ar", str(_SR), str(dst)])
 
 
+def concat_audio(parts: list[Path], dst: Path) -> None:
+    """Concatenate per-line audio clips into one shot-level WAV file."""
+    if len(parts) == 1:
+        _ff(["-i", str(parts[0]), "-ac", "2", "-ar", str(_SR), str(dst)])
+        return
+    listing = dst.with_suffix(".concat.txt")
+    listing.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
+    _ff(["-f", "concat", "-safe", "0", "-i", str(listing),
+         "-ac", "2", "-ar", str(_SR), str(dst)])
+
+
 def mux_av(video: str, audio: str, dst: Path) -> None:
     _ff(["-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
          "-map", "0:v:0", "-map", "1:a:0", "-shortest", str(dst)])

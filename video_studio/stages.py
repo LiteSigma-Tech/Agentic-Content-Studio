@@ -91,7 +91,10 @@ def _parse_episode(data: dict, project: Project) -> tuple[Episode, list[Characte
             return None
         ep = Episode(number=1, title=data.get("title", project.title),
                      logline=data.get("logline", ""), scenes=scenes)
-        chars = [Character(name=n) for n in sorted(names)] or \
+        # Use top-level characters array (with descriptions) when the LLM provides it.
+        char_defs = {c["name"]: c.get("description", "")
+                     for c in data.get("characters", []) if "name" in c}
+        chars = [Character(name=n, description=char_defs.get(n, "")) for n in sorted(names)] or \
                 [Character(name="Lead")]
         return ep, chars
     except Exception:
@@ -99,41 +102,103 @@ def _parse_episode(data: dict, project: Project) -> tuple[Episode, list[Characte
 
 
 # --- stages -----------------------------------------------------------------
+def _script_critique(episode: Episode, characters: list[Character]) -> str | None:
+    """Return a critique string if descriptions are too thin; None if quality is fine."""
+    issues = []
+    thin_chars = [ch.name for ch in characters if len(ch.description) < 50]
+    if thin_chars:
+        issues.append(
+            f"Characters need fuller physical descriptions (age, build, hair, clothing, "
+            f"distinguishing features): {', '.join(thin_chars)}")
+    thin_shots = [sh.id for sc in episode.scenes for sh in sc.shots
+                  if len(sh.description) < 80]
+    if thin_shots:
+        issues.append(
+            f"Shots need richer self-contained visual descriptions "
+            f"(setting, lighting, positions, action, mood): {', '.join(thin_shots[:6])}")
+    return " | ".join(issues) if issues else None
+
+
 def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
     tpl = template_for(project.genre)
     project.style_prompt = tpl.style_prompt
+
+    _json_shape = (
+        '{"title":"...","logline":"...","characters":[{"name":"...","description":"..."}],'
+        '"scenes":[{"id":"...","setting":"...","shots":[{"id":"...","description":"...",'
+        '"seconds":5,"characters":["..."],"dialogue":[{"character":"...","text":"..."}]}]}]}'
+    )
 
     # If concept is a detailed script (> 300 chars), convert it to shot JSON
     # instead of generating a new script from scratch.
     if len(project.concept) > 300:
         prompt = (
-            f"You are a TV production assistant. Convert this script into episode JSON.\n"
+            f"You are a senior TV production assistant converting a script into a structured "
+            f"episode JSON for an AI video pipeline.\n"
             f"Genre: {project.genre.value}. Safety: {tpl.safety_notes}\n\n"
             f"SCRIPT:\n{project.concept}\n\n"
-            "Instructions:\n"
-            "- Extract 8-15 key visual moments as shots\n"
-            "- Each shot must be exactly 5 seconds (seconds=5)\n"
-            "- Keep dialogue exactly as written in the script\n"
-            "- Group related shots into scenes by location\n"
-            "Respond ONLY with JSON of shape: {title, logline, scenes:[{id,setting,"
-            "shots:[{id,description,seconds,characters:[..],dialogue:[{character,text}]}]}]}"
+            "Complete ALL three tasks before outputting JSON:\n\n"
+            "TASK 1 — CHARACTERS: Identify every speaking or visible character. "
+            "For each, write a detailed physical description covering age, build, hair colour and style, "
+            "clothing, and any distinguishing features — enough for an AI image model to generate a "
+            "consistent reference sheet across multiple shots.\n\n"
+            "TASK 2 — SHOTS: Extract 8-15 key visual moments as shots. For each shot:\n"
+            "  • Write a rich, self-contained visual description (3-5 sentences) covering exactly "
+            "what the camera sees: setting details, lighting quality, character positions, "
+            "actions, and emotional mood. Do NOT reference earlier shots — every description "
+            "must work in isolation for image generation.\n"
+            "  • Set seconds=5.\n"
+            "  • Preserve dialogue exactly as written in the script.\n"
+            "  • Group shots into scenes by location/setting.\n\n"
+            "TASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
+            + _json_shape
         )
     else:
         prompt = (
-            f"You are a TV writer. Write episode 1 of a {project.genre.value} series.\n"
-            f"Premise: {project.concept}\nTone: {tpl.tone}\n"
-            f"Structure it across these beats: {', '.join(tpl.beats)}.\n"
-            f"Safety: {tpl.safety_notes}\n"
-            "IMPORTANT: Use exactly 1 scene with exactly 5 shots. Each shot must be "
-            "exactly 5 seconds (seconds=5). No exceptions.\n"
-            "Respond ONLY with JSON of shape: {title, logline, scenes:[{id,setting,"
-            "shots:[{id,description,seconds,characters:[..],dialogue:[{character,text}]}]}]}"
+            f"You are a professional TV writer creating a fully realised episode for an AI video pipeline.\n"
+            f"Genre: {project.genre.value}. Premise: {project.concept}\n"
+            f"Tone: {tpl.tone}\n"
+            f"Narrative beats to cover in order: {', '.join(tpl.beats)}.\n"
+            f"Safety: {tpl.safety_notes}\n\n"
+            "Complete ALL three tasks before outputting JSON:\n\n"
+            "TASK 1 — CHARACTERS: Define 2-4 characters. For each, write a detailed physical "
+            "description covering age, build, hair colour and style, clothing, and any distinguishing "
+            "features — enough for an AI image model to generate a consistent reference sheet.\n\n"
+            "TASK 2 — SHOTS: Write 5-8 shots across 1-3 scenes so every beat above is covered by "
+            "at least one shot. For each shot:\n"
+            "  • Write a rich, self-contained visual description (3-5 sentences) covering exactly "
+            "what the camera sees: setting details, lighting quality, character positions, "
+            "actions, and emotional mood. Do NOT reference earlier shots — every description "
+            "must work in isolation for image generation.\n"
+            f"  • Visual style to reflect: {tpl.style_prompt}\n"
+            "  • Set seconds=5.\n"
+            "  • Write natural, character-specific dialogue.\n\n"
+            "TASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
+            + _json_shape
         )
     res = ctx.gw.llm(tpl.llm_task, [{"role": "user", "content": prompt}],
                      json_mode=True, required_caps=tpl.required_caps)
 
     parsed = _extract_json(res.text)
     built = _parse_episode(parsed, project) if parsed else None
+
+    # Quality gate: if descriptions are thin, retry once with targeted feedback.
+    if built is not None:
+        critique = _script_critique(*built)
+        if critique:
+            res2 = ctx.gw.llm(
+                tpl.llm_task,
+                [{"role": "user", "content": prompt},
+                 {"role": "assistant", "content": res.text},
+                 {"role": "user", "content":
+                  f"Rejected — output was too thin. Fix these issues and rewrite the "
+                  f"complete JSON from scratch:\n{critique}"}],
+                json_mode=True, required_caps=tpl.required_caps)
+            parsed2 = _extract_json(res2.text)
+            built2 = _parse_episode(parsed2, project) if parsed2 else None
+            if built2 is not None:
+                built, res = built2, res2
+
     if built is None:
         built = _skeleton_episode(project)   # offline / non-JSON model fallback
     project.episode, project.characters = built
@@ -157,13 +222,26 @@ def design_characters(project: Project, ctx: StageContext) -> tuple[str, float]:
 
 def generate_keyframes(project: Project, ctx: StageContext) -> tuple[str, float]:
     cost, model = 0.0, ""
+    # Build lookup tables from the character roster produced by write_script.
+    char_desc = {ch.name: ch.description for ch in project.characters if ch.description}
+    char_ref  = {ch.name: ch.reference_uri for ch in project.characters if ch.reference_uri}
     for sh in project.all_shots():
         if sh.keyframe_uri:
             continue
-        cast = ", ".join(sh.characters) if sh.characters else "the cast"
-        res = ctx.gw.image(
-            "default",
-            f"{sh.description}. Featuring {cast}. Style: {project.style_prompt}")
+        # Inline each character's physical description so the image model has
+        # visual ground-truth rather than just a name.
+        if sh.characters:
+            char_details = ", ".join(
+                f"{n} ({char_desc[n]})" if n in char_desc else n
+                for n in sh.characters)
+        else:
+            char_details = "the cast"
+        img_prompt = (f"{sh.description}. Characters present: {char_details}. "
+                      f"Style: {project.style_prompt}")
+        # For single-character shots pass the reference sheet as init_image so
+        # the model can anchor appearance; skip for multi-character (complex).
+        init_img = char_ref.get(sh.characters[0]) if len(sh.characters) == 1 else None
+        res = ctx.gw.image("default", img_prompt, init_image=init_img)
         sh.keyframe_uri, model, cost = res.uri, res.model_used, cost + res.cost_usd
     return model or "n/a", cost
 

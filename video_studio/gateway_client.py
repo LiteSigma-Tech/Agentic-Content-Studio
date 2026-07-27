@@ -31,7 +31,7 @@ class GenResult:
 
 class Gateway:
     def llm(self, task, messages, *, json_mode=False, required_caps=None) -> GenResult: ...
-    def image(self, task, prompt, *, width=1024, height=576) -> GenResult: ...
+    def image(self, task, prompt, *, width=1024, height=576, init_image=None) -> GenResult: ...
     def video(self, task, prompt, *, seconds=5.0, fps=24, init_image=None,
               required_caps=None) -> GenResult: ...
     def tts(self, task, text, *, voice_id="default", required_caps=None) -> GenResult: ...
@@ -52,9 +52,10 @@ class InProcessGateway(Gateway):
         return GenResult(text=out.result.text, model_used=out.model_id,
                          cost_usd=out.cost_usd)
 
-    def image(self, task, prompt, *, width=1024, height=576) -> GenResult:
+    def image(self, task, prompt, *, width=1024, height=576, init_image=None) -> GenResult:
         out = self.router.execute(
-            "image", task, lambda p: p.generate(prompt, width=width, height=height))
+            "image", task,
+            lambda p: p.generate(prompt, width=width, height=height, init_image=init_image))
         return GenResult(uri=out.result.uri, model_used=out.model_id,
                          cost_usd=out.cost_usd)
 
@@ -101,9 +102,10 @@ class HttpGateway(Gateway):
         return self._post("/v1/llm", {"task": task, "messages": messages,
                                       "json_mode": json_mode})
 
-    def image(self, task, prompt, *, width=1024, height=576):
+    def image(self, task, prompt, *, width=1024, height=576, init_image=None):
         return self._post("/v1/image", {"task": task, "prompt": prompt,
-                                        "width": width, "height": height})
+                                        "width": width, "height": height,
+                                        "init_image": init_image})
 
     def video(self, task, prompt, *, seconds=5.0, fps=24, init_image=None,
               required_caps=None):

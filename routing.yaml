@@ -37,8 +37,16 @@ routing:
 
   video:
     default:
-      default: "replicate/animate-diff"
-      fallbacks: ["comfyui/ltx-video"]
+      # Quality order: best providers first. Only registered models are used;
+      # unregistered ones (missing API key) are silently skipped by the router.
+      default: "runway/gen4-turbo"
+      fallbacks:
+        - "luma/dream-machine"
+        - "replicate/kling"
+        - "replicate/hunyuan"
+        - "replicate/mochi"
+        - "replicate/animate-diff"
+        - "comfyui/ltx-video"
 
   tts:
     default:
