@@ -71,13 +71,17 @@ export const modelsApi = {
 export const studioApiCalls = {
   listProjects: (limit = 10, offset = 0) =>
     studioApi.get('/v1/projects', { params: { limit, offset } }).then(r => r.data).catch(() => ({ items: [], total: 0 })),
-  createProject: (concept, genre) =>
-    studioApi.post('/v1/projects', { concept, genre }).then(r => r.data),
+  createProject: (concept, genre, review_mode = false) =>
+    studioApi.post('/v1/projects', { concept, genre, review_mode }).then(r => r.data),
   runProject: (id, body = {}) =>
     studioApi.post('/v1/projects/' + id + '/run', body).then(r => r.data),
   getProject: id =>
     studioApi.get('/v1/projects/' + id).then(r => r.data),
   videoUrl: id => `${STUDIO}/v1/projects/${id}/video`,
+  approveStage: (id, stage, note = '') =>
+    studioApi.post(`/v1/projects/${id}/stages/${stage}/approve`, { note, background: true }).then(r => r.data),
+  rejectStage: (id, stage, prompt_override = '', note = '') =>
+    studioApi.post(`/v1/projects/${id}/stages/${stage}/reject`, { prompt_override, note, background: true }).then(r => r.data),
 }
 
 export const leadsApiCalls = {

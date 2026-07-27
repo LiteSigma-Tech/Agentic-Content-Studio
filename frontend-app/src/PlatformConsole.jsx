@@ -21,7 +21,7 @@ const sans = "Inter, system-ui, -apple-system, Segoe UI, sans-serif";
 
 /* status -> color */
 const SC = { running: T.amber, done: T.teal, pending: T.faint,
-  blocked: T.clay, ok: T.teal };
+  blocked: T.clay, ok: T.teal, awaiting_review: T.violet };
 
 /* ── mobile hook ───────────────────────────────────────────────────────── */
 function useIsMobile() {
@@ -73,18 +73,32 @@ function Btn({ children, onClick, kind = "ghost", disabled, icon: Ic }) {
 
 /* ── signature: the signal chain ──────────────────────────────────────── */
 const STAGES = [
-  ["Script", "video"], ["Characters", "video"], ["Keyframes", "video"],
-  ["Cast voices", "audio"], ["Dialogue", "audio"], ["Music", "audio"],
-  ["Clips", "video"], ["Assemble", "video"], ["Render", "video"],
-  ["Mix", "audio"], ["Mux", "audio"],
+  ["Script", "video", "write_script"], ["Characters", "video", "design_characters"],
+  ["Keyframes", "video", "generate_keyframes"], ["Cast voices", "audio", "cast_voices"],
+  ["Dialogue", "audio", "generate_dialogue"], ["Music", "audio", "generate_music"],
+  ["Clips", "video", "generate_clips"], ["Assemble", "video", "assemble"],
+  ["Render", "video", "render"], ["Mix", "audio", "mix_audio"], ["Mux", "audio", "mux"],
 ];
-function SignalChain({ idx, running, failedIdx }) {
+
+// Stages where a prompt override makes sense (AI-generated content)
+const PROMPT_OVERRIDE_STAGES = new Set([
+  "write_script", "design_characters", "generate_keyframes",
+  "generate_clips", "generate_music",
+]);
+
+function SignalChain({ idx, running, failedIdx, stageStatuses = {} }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 0, minWidth: 720, padding: "6px 2px" }}>
-        {STAGES.map(([label, lane], i) => {
+        {STAGES.map(([label, lane, key], i) => {
+          const liveStatus = stageStatuses[key];
           const isFailed = failedIdx !== undefined && i === failedIdx;
-          const status = isFailed ? "blocked" : i < idx ? "done" : (i === idx && running ? "running" : i === idx && !running && idx === STAGES.length ? "done" : "pending");
+          let status;
+          if (liveStatus === "awaiting_review") status = "awaiting_review";
+          else if (isFailed) status = "blocked";
+          else if (liveStatus === "done") status = "done";
+          else if (liveStatus === "running") status = "running";
+          else status = i < idx ? "done" : (i === idx && running ? "running" : "pending");
           const c = SC[status];
           const first = i === 0 || STAGES[i - 1][1] !== lane;
           return (
@@ -97,8 +111,14 @@ function SignalChain({ idx, running, failedIdx }) {
                 <div style={{ width: 38, height: 38, borderRadius: 8,
                   background: status === "pending" ? T.panel2 : `${c}1A`,
                   border: `1px solid ${status === "pending" ? T.line2 : c}`,
-                  display: "grid", placeItems: "center" }}>
-                  <Lamp on={status !== "pending"} color={c} size={9} />
+                  display: "grid", placeItems: "center",
+                  position: "relative" }}>
+                  <Lamp on={status !== "pending"} color={c} size={9}
+                    className={status === "awaiting_review" ? "led-pulse" : ""} />
+                  {status === "awaiting_review" && (
+                    <span style={{ position: "absolute", top: -5, right: -5, width: 10, height: 10,
+                      borderRadius: 99, background: T.violet, border: `2px solid ${T.ink}` }} />
+                  )}
                 </div>
                 <div style={{ font: `500 9px/1.2 ${mono}`, color: status === "pending" ? T.faint : T.paper,
                   textAlign: "center", maxWidth: 56 }}>{label}</div>
@@ -110,6 +130,131 @@ function SignalChain({ idx, running, failedIdx }) {
         })}
       </div>
     </div>
+  );
+}
+
+/* ── stage review banner ───────────────────────────────────────────────── */
+function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }) {
+  const [showOverride, setShowOverride] = useState(false);
+  const [note, setNote] = useState("");
+  const [override, setOverride] = useState("");
+
+  const stageLabel = STAGES.find(([, , k]) => k === stageName)?.[0] ?? stageName.replace(/_/g, " ");
+  const stageRecord = project?.stages?.find(s => s.name === stageName);
+  const canOverride = PROMPT_OVERRIDE_STAGES.has(stageName);
+
+  // Build a summary of what the stage produced
+  const summary = (() => {
+    if (!project) return null;
+    if (stageName === "write_script") {
+      const ep = project.episode;
+      if (!ep) return null;
+      const shots = (ep.scenes || []).flatMap(sc => sc.shots || []);
+      const charNames = (project.characters || []).map(c => c.name).join(", ");
+      return (
+        <div style={{ display: "grid", gap: 6 }}>
+          {ep.logline && <div style={{ font: `400 12px/1.5 ${sans}`, color: T.paper }}>{ep.logline}</div>}
+          {charNames && <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Characters: {charNames}</div>}
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{shots.length} shots across {(ep.scenes || []).length} scene(s)</div>
+        </div>
+      );
+    }
+    if (stageName === "design_characters") {
+      const done = (project.characters || []).filter(c => c.reference_uri).length;
+      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done} character reference image{done !== 1 ? "s" : ""} generated</div>;
+    }
+    if (stageName === "generate_keyframes") {
+      const shots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
+      const done = shots.filter(s => s.keyframe_uri).length;
+      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done}/{shots.length} keyframes generated</div>;
+    }
+    if (stageName === "generate_clips") {
+      const shots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
+      const done = shots.filter(s => s.clip_uri).length;
+      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done}/{shots.length} clips generated</div>;
+    }
+    if (stageName === "cast_voices") {
+      const cast = project.voice_cast || {};
+      const entries = Object.entries(cast);
+      return entries.length ? (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {entries.map(([char, voice]) => (
+            <span key={char} style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>
+              {char} <span style={{ color: T.violet }}>{voice}</span>
+            </span>
+          ))}
+        </div>
+      ) : null;
+    }
+    if (stageName === "generate_music") {
+      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Music bed generated · {stageRecord?.model_used || "—"}</div>;
+    }
+    return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Stage complete</div>;
+  })();
+
+  function handleApprove() {
+    onApprove(stageName, note);
+    setNote(""); setOverride(""); setShowOverride(false);
+  }
+  function handleReject() {
+    onReject(stageName, override, note);
+    setNote(""); setOverride(""); setShowOverride(false);
+  }
+
+  return (
+    <Panel style={{ padding: 16, border: `1px solid ${T.violet}55`, background: `${T.violet}08` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 12, flexWrap: "wrap", marginBottom: summary ? 14 : 0 }}>
+        <div>
+          <Eyebrow color={T.violet}>awaiting review · {stageLabel}</Eyebrow>
+          {stageRecord?.cost_usd > 0 && (
+            <div style={{ font: `500 10px/1 ${mono}`, color: T.faint, marginTop: 4 }}>
+              ${stageRecord.cost_usd.toFixed(4)} · {stageRecord.model_used}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <Btn kind="ok" icon={Check} onClick={handleApprove} disabled={disabled}>
+            {disabled ? "Running…" : "Approve & continue"}
+          </Btn>
+          {canOverride && (
+            <Btn kind="danger" icon={X} onClick={() => setShowOverride(o => !o)} disabled={disabled}>
+              Reject & refine
+            </Btn>
+          )}
+          {!canOverride && (
+            <Btn kind="danger" icon={X} onClick={handleReject} disabled={disabled}>
+              {disabled ? "Running…" : "Reject & redo"}
+            </Btn>
+          )}
+        </div>
+      </div>
+      {summary && <div style={{ marginBottom: showOverride ? 14 : 0 }}>{summary}</div>}
+      {showOverride && (
+        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          <div>
+            <label style={{ font: `500 10px/1 ${mono}`, color: T.muted }}>
+              Revision instructions (appended to the prompt on retry)
+            </label>
+            <textarea
+              value={override}
+              onChange={e => setOverride(e.target.value)}
+              placeholder={`e.g. "Make the characters more expressive and add more visual detail to each shot description"`}
+              rows={3}
+              style={{ display: "block", width: "100%", marginTop: 6, background: T.ink,
+                color: T.paper, border: `1px solid ${T.line2}`, borderRadius: 7,
+                padding: "10px 12px", font: `400 12px/1.5 ${sans}`,
+                boxSizing: "border-box", resize: "vertical" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn kind="danger" icon={RotateCcw} onClick={handleReject} disabled={disabled}>
+              {disabled ? "Running…" : "Reject & re-run stage"}
+            </Btn>
+            <Btn onClick={() => setShowOverride(false)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -194,8 +339,15 @@ function Dashboard({ go, studioIdx, studioRunning, pending, usageData, livePendi
   );
 }
 
-function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, failedStage, concept, setConcept, isMobile }) {
+function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, failedStage,
+  concept, setConcept, reviewMode, setReviewMode, awaitingStageName, activeProject,
+  onApproveStage, onRejectStage, isMobile }) {
   const kids = genre === "kids_cartoon";
+
+  // Build a map of stage key -> status from live project data
+  const stageStatuses = {};
+  (activeProject?.stages || []).forEach(s => { stageStatuses[s.name] = s.status; });
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {hasFailed && failedStage && (
@@ -215,6 +367,17 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
           </div>
         </Panel>
       )}
+
+      {awaitingStageName && activeProject && (
+        <StageReviewBanner
+          project={activeProject}
+          stageName={awaitingStageName}
+          onApprove={onApproveStage}
+          onReject={onRejectStage}
+          disabled={running}
+        />
+      )}
+
       <Panel style={{ padding: 18 }}>
         <Eyebrow color={T.amber}>new episode</Eyebrow>
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginTop: 12, flexWrap: "wrap" }}>
@@ -236,12 +399,34 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
               {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Review mode</label>
+            <button onClick={() => setReviewMode(r => !r)}
+              style={{ display: "flex", alignItems: "center", gap: 8, background: "transparent",
+                border: "none", cursor: "pointer", padding: "10px 0" }}>
+              <span style={{ width: 34, height: 18, borderRadius: 99, padding: 2,
+                background: reviewMode ? `${T.violet}55` : T.line2, transition: "all .2s",
+                display: "flex", justifyContent: reviewMode ? "flex-end" : "flex-start" }}>
+                <span style={{ width: 14, height: 14, borderRadius: 99,
+                  background: reviewMode ? T.violet : T.muted }} /></span>
+              <span style={{ font: `600 10px/1 ${mono}`, color: reviewMode ? T.violet : T.faint,
+                letterSpacing: ".1em", textTransform: "uppercase" }}>
+                {reviewMode ? "on" : "off"}
+              </span>
+            </button>
+          </div>
           <Btn kind="primary" icon={running ? RotateCcw : Play}
-            onClick={running ? undefined : run} disabled={running}>
+            onClick={running ? undefined : run} disabled={running || !!awaitingStageName}>
             {running ? "Running…" : "Run pipeline"}</Btn>
           <Btn icon={RotateCcw} onClick={reset}>Reset</Btn>
         </div>
-        {kids && <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8,
+        {reviewMode && !running && !awaitingStageName && (
+          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8,
+            font: `500 11px/1.4 ${mono}`, color: T.violet }}>
+            <ShieldCheck size={12} /> Pipeline will pause after each stage for your review before proceeding.
+          </div>
+        )}
+        {kids && <div style={{ marginTop: reviewMode ? 6 : 12, display: "flex", alignItems: "center", gap: 8,
           font: `500 11px/1.4 ${mono}`, color: T.violet }}>
           <Lock size={12} /> Kids content routes script, dialogue & music through the
           moderation-gated path — only models flagged <b>moderation_ok</b> can run.</div>}
@@ -253,8 +438,8 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
           <span style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>
             {idx >= STAGES.length ? "11/11" : `${Math.min(idx + (running ? 1 : 0), STAGES.length)}/11`}</span>
         </div>
-        <SignalChain idx={idx} running={running}
-          failedIdx={failedStage ? STAGES.findIndex(([l]) => l.toLowerCase().replace(/ /g,'_') === failedStage.name || failedStage.name.includes(l.toLowerCase().replace(/ /g,'_'))) : undefined} />
+        <SignalChain idx={idx} running={running} stageStatuses={stageStatuses}
+          failedIdx={failedStage ? STAGES.findIndex(([, , k]) => k === failedStage.name) : undefined} />
       </Panel>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
@@ -336,8 +521,11 @@ function ProjectsGallery() {
           const isDone = p.final_av_uri || p.final_uri || p.status === 'done';
           const hasFail = p.stages?.some(s => s.status === 'failed');
           const isRunning = p.stages?.some(s => s.status === 'running');
+          const isAwaiting = p.stages?.some(s => s.status === 'awaiting_review');
           const stageDone = p.stages?.filter(s => s.status === 'done').length ?? 0;
           const stageTotal = p.stages?.length ?? 11;
+          const pillStatus = isDone ? 'done' : hasFail ? 'blocked' : isRunning ? 'running' : isAwaiting ? 'awaiting_review' : 'pending';
+          const pillLabel = isDone ? 'done' : hasFail ? 'failed' : isRunning ? 'running' : isAwaiting ? 'review' : 'pending';
           return (
             <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto',
               gap: 10, alignItems: 'center', padding: '9px 0',
@@ -348,12 +536,10 @@ function ProjectsGallery() {
                 </div>
                 <div style={{ font: `500 10px/1 ${mono}`, color: T.faint, marginTop: 2 }}>
                   {p.genre} · ${(p.total_cost_usd || 0).toFixed(3)} · {stageDone}/{stageTotal} stages
+                  {p.review_mode && <span style={{ color: T.violet }}> · review mode</span>}
                 </div>
               </div>
-              <Pill
-                status={isDone ? 'done' : hasFail ? 'blocked' : isRunning ? 'running' : 'pending'}
-                label={isDone ? 'done' : hasFail ? 'failed' : isRunning ? 'running' : 'pending'}
-              />
+              <Pill status={pillStatus} label={pillLabel} />
               {isDone && (
                 <Btn kind="ok" icon={Play} onClick={() => setPlaying(p)}>Watch</Btn>
               )}
@@ -754,7 +940,7 @@ export default function PlatformConsole({ onLoginRequest }) {
     queryKey: ['studio-project', studioProjectId],
     queryFn: () => studioApiCalls.getProject(studioProjectId),
     enabled: !!studioProjectId,
-    refetchInterval: running ? 2000 : false,
+    refetchInterval: (running || reviewPending) ? 2000 : false,
   });
 
   // Sync stage index from live project data
@@ -764,8 +950,10 @@ export default function PlatformConsole({ onLoginRequest }) {
     const done = stages.filter(s => s.status === 'done').length;
     setIdx(done);
     const anyFailed = stages.some(s => s.status === 'failed');
+    const anyAwaiting = stages.some(s => s.status === 'awaiting_review');
+    setReviewPending(anyAwaiting);
     const allDone = done >= STAGES.length;
-    if (allDone || anyFailed) {
+    if (allDone || anyFailed || anyAwaiting) {
       setRunning(false);
     }
   }, [activeProject]);
@@ -790,6 +978,9 @@ export default function PlatformConsole({ onLoginRequest }) {
 
   const livePending = runsData?.items ? runsData.items.filter(r => r.status === 'awaiting_approval').length : null;
   const liveRuns = runsData?.items || [];
+
+  const [reviewMode, setReviewMode] = useState(false);
+  const [reviewPending, setReviewPending] = useState(false);
 
   const [freeOnly, setFreeOnly] = useState(true);
   const [approvals, setApprovals] = useState([
@@ -817,12 +1008,14 @@ export default function PlatformConsole({ onLoginRequest }) {
 
   const hasFailed = activeProject?.stages?.some(s => s.status === 'failed') ?? false;
   const failedStage = activeProject?.stages?.find(s => s.status === 'failed') ?? null;
+  const awaitingStageName = activeProject?.awaiting_review_stage ?? null;
 
   async function run() {
     setRunning(true);
     setIdx(0);
+    setReviewPending(false);
     try {
-      const { id } = await studioApiCalls.createProject(concept, genre);
+      const { id } = await studioApiCalls.createProject(concept, genre, reviewMode);
       setStudioProjectId(id);
       await studioApiCalls.runProject(id, { background: true });
     } catch (e) {
@@ -842,8 +1035,33 @@ export default function PlatformConsole({ onLoginRequest }) {
 
   function reset() {
     setRunning(false);
+    setReviewPending(false);
     setIdx(0);
     setStudioProjectId(null);
+  }
+
+  async function approveStage(stageName, note = '') {
+    if (!studioProjectId) return;
+    setRunning(true);
+    setReviewPending(false);
+    try {
+      await studioApiCalls.approveStage(studioProjectId, stageName, note);
+      qc.invalidateQueries(['studio-project', studioProjectId]);
+    } catch (e) {
+      setRunning(false);
+    }
+  }
+
+  async function rejectStage(stageName, promptOverride = '', note = '') {
+    if (!studioProjectId) return;
+    setRunning(true);
+    setReviewPending(false);
+    try {
+      await studioApiCalls.rejectStage(studioProjectId, stageName, promptOverride, note);
+      qc.invalidateQueries(['studio-project', studioProjectId]);
+    } catch (e) {
+      setRunning(false);
+    }
   }
 
   function decide(id, status) {
@@ -862,7 +1080,7 @@ export default function PlatformConsole({ onLoginRequest }) {
 
   const localPending = approvals.filter((a) => a.status === "pending").length;
   const pending = livePending ?? localPending;
-  const onair = running || pending > 0;
+  const onair = running || pending > 0 || reviewPending;
 
   const allNavItems = [...NAV, ...(isAdmin ? [["admin", Users, "Admin"]] : [])];
 
@@ -985,6 +1203,12 @@ export default function PlatformConsole({ onLoginRequest }) {
               failedStage={failedStage}
               concept={concept}
               setConcept={setConcept}
+              reviewMode={reviewMode}
+              setReviewMode={setReviewMode}
+              awaitingStageName={awaitingStageName}
+              activeProject={activeProject}
+              onApproveStage={approveStage}
+              onRejectStage={rejectStage}
               isMobile={isMobile}
             />
           )}

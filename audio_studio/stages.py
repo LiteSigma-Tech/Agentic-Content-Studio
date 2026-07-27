@@ -83,8 +83,11 @@ def generate_music(project: Project, ctx: StageContext) -> tuple[str, float]:
         project.music_uri = None  # re-generate if missing or wrong format
     tpl = template_for(project.genre)
     total = sum(sh.seconds for sh in project.all_shots()) or 5.0
-    res = ctx.gw.music("default",
-                       f"{tpl.tone} background score for '{project.title}'",
+    music_prompt = f"{tpl.tone} background score for '{project.title}'"
+    override = project.prompt_overrides.get("generate_music", "")
+    if override:
+        music_prompt += f". Additional direction: {override}"
+    res = ctx.gw.music("default", music_prompt,
                        seconds=total, required_caps=tpl.required_caps)
     dst = _audio_dir(ctx) / "music_bed.wav"
     if synth.is_real_audio(res.uri):

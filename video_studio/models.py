@@ -30,6 +30,7 @@ class StageStatus(str, Enum):
     running = "running"
     done = "done"
     failed = "failed"
+    awaiting_review = "awaiting_review"
 
 
 class Line(BaseModel):
@@ -76,6 +77,8 @@ class StageRecord(BaseModel):
     error: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+    review_note: Optional[str] = None      # human comment on approve/reject
+    prompt_override: Optional[str] = None  # stronger prompt hint for retry
 
 
 class PipelineState(BaseModel):
@@ -104,6 +107,9 @@ class Project(BaseModel):
     episode: Episode = Field(default_factory=Episode)
     manifest_uri: Optional[str] = None     # assembly output (timeline / EDL)
     final_uri: Optional[str] = None        # rendered mp4 (silent video)
+    # --- review mode ---
+    review_mode: bool = False              # pause after each stage for human review
+    prompt_overrides: dict[str, str] = Field(default_factory=dict)  # per-stage prompt hints
     # --- Audio Studio (B5) ---
     voice_cast: dict[str, str] = Field(default_factory=dict)  # character -> voice_id
     music_uri: Optional[str] = None        # generated/selected music bed

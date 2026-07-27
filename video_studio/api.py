@@ -35,6 +35,7 @@ class CreateReq(BaseModel):
     concept: str
     genre: Genre
     title: str = ""
+    review_mode: bool = False
 
 
 class RunReq(BaseModel):
@@ -42,10 +43,23 @@ class RunReq(BaseModel):
     background: bool = False
 
 
+class ApproveReq(BaseModel):
+    note: str = ""
+    background: bool = False
+
+
+class RejectReq(BaseModel):
+    prompt_override: str = ""
+    note: str = ""
+    background: bool = False
+
+
 @app.post("/v1/projects")
 def create(req: CreateReq):
-    p = create_project(req.concept, req.genre, req.title, store=store)
-    return {"id": p.id, "title": p.title, "genre": p.genre.value}
+    p = create_project(req.concept, req.genre, req.title,
+                       store=store, review_mode=req.review_mode)
+    return {"id": p.id, "title": p.title, "genre": p.genre.value,
+            "review_mode": p.review_mode}
 
 
 @app.post("/v1/projects/{project_id}/run")
@@ -58,7 +72,45 @@ def run(project_id: str, req: RunReq, bg: BackgroundTasks):
     try:
         pipeline.run(project_id, force_from=req.force_from)
     except Exception as e:  # noqa: BLE001
-        # the failed stage is already checkpointed; report it
+        return {"status": "failed", "error": str(e), **pipeline.status(project_id)}
+    return pipeline.status(project_id)
+
+
+@app.post("/v1/projects/{project_id}/stages/{stage_name}/approve")
+def approve_stage(project_id: str, stage_name: str, req: ApproveReq,
+                  bg: BackgroundTasks):
+    if not store.exists(project_id):
+        raise HTTPException(404, "project not found")
+    try:
+        pipeline.approve_stage(project_id, stage_name, note=req.note)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if req.background:
+        bg.add_task(pipeline.run, project_id)
+        return {"status": "approved_running", "id": project_id}
+    try:
+        pipeline.run(project_id)
+    except Exception as e:  # noqa: BLE001
+        return {"status": "failed", "error": str(e), **pipeline.status(project_id)}
+    return pipeline.status(project_id)
+
+
+@app.post("/v1/projects/{project_id}/stages/{stage_name}/reject")
+def reject_stage(project_id: str, stage_name: str, req: RejectReq,
+                 bg: BackgroundTasks):
+    if not store.exists(project_id):
+        raise HTTPException(404, "project not found")
+    try:
+        pipeline.reject_stage(project_id, stage_name,
+                              prompt_override=req.prompt_override, note=req.note)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if req.background:
+        bg.add_task(pipeline.run, project_id)
+        return {"status": "rejected_rerunning", "id": project_id}
+    try:
+        pipeline.run(project_id)
+    except Exception as e:  # noqa: BLE001
         return {"status": "failed", "error": str(e), **pipeline.status(project_id)}
     return pipeline.status(project_id)
 

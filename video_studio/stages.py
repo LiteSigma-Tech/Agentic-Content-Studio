@@ -176,6 +176,10 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
             "TASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
             + _json_shape
         )
+    override = project.prompt_overrides.get("write_script", "")
+    if override:
+        prompt += f"\n\nREVIEWER NOTES — incorporate these changes:\n{override}"
+
     res = ctx.gw.llm(tpl.llm_task, [{"role": "user", "content": prompt}],
                      json_mode=True, required_caps=tpl.required_caps)
 
@@ -213,9 +217,11 @@ def design_characters(project: Project, ctx: StageContext) -> tuple[str, float]:
         if ch.reference_uri:
             continue
         desc = ch.description or f"{ch.name}, a character in '{project.title}'"
-        res = ctx.gw.image(
-            "default",
-            f"Character reference sheet: {desc}. Style: {tpl.style_prompt}")
+        override = project.prompt_overrides.get("design_characters", "")
+        char_prompt = f"Character reference sheet: {desc}. Style: {tpl.style_prompt}"
+        if override:
+            char_prompt += f". Additional direction: {override}"
+        res = ctx.gw.image("default", char_prompt)
         ch.reference_uri, model, cost = res.uri, res.model_used, cost + res.cost_usd
     return model or "n/a", cost
 
@@ -238,6 +244,9 @@ def generate_keyframes(project: Project, ctx: StageContext) -> tuple[str, float]
             char_details = "the cast"
         img_prompt = (f"{sh.description}. Characters present: {char_details}. "
                       f"Style: {project.style_prompt}")
+        override = project.prompt_overrides.get("generate_keyframes", "")
+        if override:
+            img_prompt += f". Additional direction: {override}"
         # For single-character shots pass the reference sheet as init_image so
         # the model can anchor appearance; skip for multi-character (complex).
         init_img = char_ref.get(sh.characters[0]) if len(sh.characters) == 1 else None
@@ -252,9 +261,12 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
     for sh in project.all_shots():
         if sh.clip_uri:
             continue
+        clip_prompt = f"{sh.description}. Style: {project.style_prompt}"
+        override = project.prompt_overrides.get("generate_clips", "")
+        if override:
+            clip_prompt += f". Additional direction: {override}"
         res = ctx.gw.video(
-            "default",
-            f"{sh.description}. Style: {project.style_prompt}",
+            "default", clip_prompt,
             seconds=sh.seconds, init_image=sh.keyframe_uri,
             required_caps=tpl.required_caps)
         sh.clip_uri, model, cost = res.uri, res.model_used, cost + res.cost_usd
