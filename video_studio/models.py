@@ -45,7 +45,9 @@ class Shot(BaseModel):
     seconds: float = 5.0
     characters: list[str] = Field(default_factory=list)
     keyframe_uri: Optional[str] = None     # filled by generate_keyframes
+    keyframe_prompt: Optional[str] = None  # exact prompt sent to image model
     clip_uri: Optional[str] = None         # filled by generate_clips
+    clip_prompt: Optional[str] = None      # exact prompt sent to video model
     # --- Audio Studio (B5) ---
     dialogue_audio_uri: Optional[str] = None   # synthesized dialogue for this shot
 
@@ -60,6 +62,7 @@ class Character(BaseModel):
     name: str
     description: str = ""
     reference_uri: Optional[str] = None    # generated once, reused everywhere
+    image_prompt: Optional[str] = None     # exact prompt sent to image model
 
 
 class Episode(BaseModel):
@@ -110,6 +113,8 @@ class Project(BaseModel):
     # --- review mode ---
     review_mode: bool = False              # pause after each stage for human review
     prompt_overrides: dict[str, str] = Field(default_factory=dict)  # per-stage prompt hints
+    script_prompt: Optional[str] = None   # exact LLM prompt sent to write_script
+    music_prompt: Optional[str] = None    # exact prompt sent to generate_music
     # --- Audio Studio (B5) ---
     voice_cast: dict[str, str] = Field(default_factory=dict)  # character -> voice_id
     music_uri: Optional[str] = None        # generated/selected music bed

@@ -12,6 +12,7 @@ final deliverable is `final_av_uri` (video + synced, mixed audio).
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import os
 from pathlib import Path
 
@@ -34,8 +35,8 @@ app = FastAPI(title="Studio (Video + Audio)", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:5174").split(","),
-    allow_credentials=True,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,6 +45,11 @@ store = ProjectStore(os.getenv("STUDIO_ROOT", "/tmp/video_studio"))
 gateway = (HttpGateway(os.environ["GATEWAY_URL"]) if os.getenv("GATEWAY_URL")
            else InProcessGateway(_ROUTING))
 pipeline = full_pipeline(gateway, store)
+
+_ALLOWED_ROOTS = [
+    Path("/tmp/gateway_media"),
+    Path("/tmp/video_studio"),
+]
 
 try:
     from shared.metrics import add_metrics_endpoint
@@ -71,6 +77,7 @@ class CreateReq(BaseModel):
 class RunReq(BaseModel):
     force_from: str | None = None
     background: bool = False
+    no_review: bool = False   # skip review pauses for this run (useful with force_from)
 
 
 class ApproveReq(BaseModel):
@@ -104,16 +111,19 @@ async def run(project_id: str, req: RunReq, bg: BackgroundTasks):
                 from arq.connections import RedisSettings
                 pool = await create_pool(RedisSettings.from_dsn(redis_url))
                 job = await pool.enqueue_job(
-                    "studio_pipeline_run", project_id, force_from=req.force_from)
+                    "studio_pipeline_run", project_id,
+                    force_from=req.force_from, no_review=req.no_review)
                 await pool.aclose()
                 return {"status": "queued", "id": project_id, "job_id": job.job_id}
             except Exception:
                 pass
         # Fallback to FastAPI BackgroundTasks when Redis is unavailable
-        bg.add_task(pipeline.run, project_id, force_from=req.force_from)
+        bg.add_task(pipeline.run, project_id,
+                    force_from=req.force_from, no_review=req.no_review)
         return {"status": "started", "id": project_id}
     try:
-        await asyncio.to_thread(pipeline.run, project_id, force_from=req.force_from)
+        await asyncio.to_thread(pipeline.run, project_id,
+                                force_from=req.force_from, no_review=req.no_review)
     except Exception as e:  # noqa: BLE001
         return {"status": "failed", "error": str(e), **pipeline.status(project_id)}
     return pipeline.status(project_id)
@@ -175,6 +185,20 @@ def status(project_id: str):
     if not store.exists(project_id):
         raise HTTPException(404, "project not found")
     return pipeline.status(project_id)
+
+
+@app.get("/v1/media")
+def serve_media(path: str = Query(...)):
+    resolved = Path(path).resolve()
+    allowed = any(
+        resolved.is_relative_to(root.resolve()) for root in _ALLOWED_ROOTS
+    )
+    if not allowed:
+        raise HTTPException(403, "path not allowed")
+    if not resolved.exists():
+        raise HTTPException(404, "file not found")
+    mime, _ = mimetypes.guess_type(str(resolved))
+    return FileResponse(str(resolved), media_type=mime or "application/octet-stream")
 
 
 @app.get("/v1/projects/{project_id}/video")

@@ -74,22 +74,32 @@ class Pipeline:
         self.on_progress = on_progress or (lambda p, s: None)
         self.stages = stages if stages is not None else STAGES
 
-    def run(self, project_id: str, *, force_from: str | None = None) -> Project:
+    def run(self, project_id: str, *, force_from: str | None = None,
+            no_review: bool = False) -> Project:
         project = self.store.load(project_id)
         ctx = StageContext(gw=self.gw, store=self.store,
                            media_dir=self.store.media_dir(project_id))
 
-        forcing = False  # becomes True once we reach the force_from stage (or stays False for normal resume)
+        # force_from: clear outputs + reset status for that stage and everything after
+        # so stages re-run instead of skipping or returning early on awaiting_review.
+        if force_from:
+            stage_names = [n for n, _ in self.stages]
+            if force_from in stage_names:
+                for name in stage_names[stage_names.index(force_from):]:
+                    _clear_stage_output(project, name)
+                    rec = project.pipeline.record(name)
+                    if rec.status != StageStatus.pending:
+                        rec.status = StageStatus.pending
+                self.store.save(project)
+
         for name, fn in self.stages:
             rec = project.pipeline.record(name)
-            if force_from and name == force_from:
-                forcing = True
 
             # Pipeline is paused — a stage needs human review before we can continue
             if rec.status == StageStatus.awaiting_review:
                 return project
 
-            if rec.status == StageStatus.done and not forcing:
+            if rec.status == StageStatus.done:
                 continue  # already complete -> skip (resume)
 
             rec.status = StageStatus.running
@@ -112,7 +122,7 @@ class Pipeline:
             rec.cost_usd = round(cost, 6)
             rec.finished_at = _now()
 
-            if project.review_mode:
+            if project.review_mode and not no_review:
                 rec.status = StageStatus.awaiting_review
                 self.store.save(project)
                 return project  # pause — human must approve before next stage
@@ -171,6 +181,8 @@ class Pipeline:
             "final_uri": p.final_uri, "manifest_uri": p.manifest_uri,
             "final_av_uri": getattr(p, "final_av_uri", None),
             "master_audio_uri": getattr(p, "master_audio_uri", None),
+            "script_prompt": getattr(p, "script_prompt", None),
+            "music_prompt": getattr(p, "music_prompt", None),
             "episode": p.episode.model_dump() if p.episode.scenes else None,
             "characters": [c.model_dump() for c in p.characters],
             "voice_cast": p.voice_cast,

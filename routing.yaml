@@ -32,21 +32,32 @@ routing:
 
   image:
     default:
-      default: "replicate/flux-schnell"
-      fallbacks: ["hf/flux-schnell", "comfyui/flux-schnell"]
+      # Priority: free Gemini → FLUX.1-dev-fp8 on RunPod (higher quality)
+      #           → flux-schnell on Replicate → mock
+      default: "google/gemini-3.1-flash-image"
+      fallbacks: ["runpod/comfyui-flux", "replicate/flux-schnell", "mock/image"]
 
   video:
     default:
       # Quality order: best providers first. Only registered models are used;
       # unregistered ones (missing API key) are silently skipped by the router.
-      default: "runway/gen4-turbo"
+      # animate-diff removed: it produces cartoon-style output regardless of prompt.
+      # mock/video is last resort — render.py converts keyframe images to static shots.
+      # Priority chain:
+      #   runpod/wan-2.2     — self-hosted Wan on 4090, ~$0.05/clip, best quality
+      #   google/veo-2       — free (daily quota), excellent quality
+      #   replicate/seedance — ~$0.15/clip, solid fallback
+      #   minimax/hailuo-02  — ~$0.24/clip
+      #   mock/video         — Ken Burns from keyframe, always free
+      default: "runpod/wan-2.2"
       fallbacks:
+        - "google/veo-2"
+        - "replicate/seedance-1-lite"
+        - "minimax/hailuo-02"
+        - "runway/gen4-turbo"
         - "luma/dream-machine"
-        - "replicate/kling"
-        - "replicate/hunyuan"
-        - "replicate/mochi"
-        - "replicate/animate-diff"
         - "comfyui/ltx-video"
+        - "mock/video"
 
   tts:
     default:
@@ -56,7 +67,7 @@ routing:
   music:
     default:
       default: "replicate/musicgen"
-      fallbacks: ["comfyui/musicgen"]
+      fallbacks: ["comfyui/musicgen", "mock/music"]
 
 policy:
   max_cost_per_job_usd: 0.10

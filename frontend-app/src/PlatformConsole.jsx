@@ -133,6 +133,31 @@ function SignalChain({ idx, running, failedIdx, stageStatuses = {} }) {
   );
 }
 
+/* ── prompt inspector ──────────────────────────────────────────────────── */
+function PromptBox({ label = "prompt sent to model", text }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        background: "none", border: `1px solid ${T.line2}`, cursor: "pointer",
+        font: `600 9px/1 ${mono}`, color: T.faint, letterSpacing: ".1em",
+        textTransform: "uppercase", padding: "3px 8px", borderRadius: 4,
+      }}>
+        {open ? "▾" : "▸"} {label}
+      </button>
+      {open && (
+        <pre style={{
+          margin: "6px 0 0", padding: "10px 12px",
+          background: T.ink, border: `1px solid ${T.line2}`, borderRadius: 6,
+          font: `400 10px/1.6 ${mono}`, color: T.faint,
+          whiteSpace: "pre-wrap", wordBreak: "break-word", overflowX: "auto",
+        }}>{text}</pre>
+      )}
+    </div>
+  );
+}
+
 /* ── stage review banner ───────────────────────────────────────────────── */
 function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }) {
   const [showOverride, setShowOverride] = useState(false);
@@ -143,36 +168,79 @@ function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }
   const stageRecord = project?.stages?.find(s => s.name === stageName);
   const canOverride = PROMPT_OVERRIDE_STAGES.has(stageName);
 
-  // Build a summary of what the stage produced
+  // Build a summary of what the stage produced (output + prompt inspector)
   const summary = (() => {
     if (!project) return null;
+    const allShots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
+
     if (stageName === "write_script") {
       const ep = project.episode;
       if (!ep) return null;
-      const shots = (ep.scenes || []).flatMap(sc => sc.shots || []);
       const charNames = (project.characters || []).map(c => c.name).join(", ");
       return (
         <div style={{ display: "grid", gap: 6 }}>
           {ep.logline && <div style={{ font: `400 12px/1.5 ${sans}`, color: T.paper }}>{ep.logline}</div>}
           {charNames && <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Characters: {charNames}</div>}
-          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{shots.length} shots across {(ep.scenes || []).length} scene(s)</div>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{allShots.length} shots across {(ep.scenes || []).length} scene(s)</div>
+          <PromptBox text={project.script_prompt} />
         </div>
       );
     }
+
     if (stageName === "design_characters") {
-      const done = (project.characters || []).filter(c => c.reference_uri).length;
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done} character reference image{done !== 1 ? "s" : ""} generated</div>;
+      const chars = project.characters || [];
+      return (
+        <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
+            {chars.map(ch => (
+              <div key={ch.name}>
+                {ch.reference_uri
+                  ? <img src={studioApiCalls.mediaUrl(ch.reference_uri)} alt={ch.name}
+                         style={{ width: "100%", aspectRatio: "1", objectFit: "cover",
+                                  borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
+                  : <div style={{ width: "100%", aspectRatio: "1", background: T.panel2, borderRadius: 6,
+                                  display: "grid", placeItems: "center" }}>
+                      <span style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>no image</span>
+                    </div>
+                }
+                <div style={{ font: `600 10px/1.3 ${sans}`, color: T.muted, marginTop: 5,
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {ch.name}
+                </div>
+                <PromptBox label="image prompt" text={ch.image_prompt} />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
     }
+
     if (stageName === "generate_keyframes") {
-      const shots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
-      const done = shots.filter(s => s.keyframe_uri).length;
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done}/{shots.length} keyframes generated</div>;
+      const keyed = allShots.filter(s => s.keyframe_uri);
+      return keyed.length === 0 ? null : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {keyed.slice(0, 8).map((s, i) => (
+            <div key={s.id} style={{ display: "grid", gap: 6 }}>
+              <div style={{ position: "relative" }}>
+                <img src={studioApiCalls.mediaUrl(s.keyframe_uri)} alt={`Shot ${i + 1}`}
+                     style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover",
+                              borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
+                <span style={{ position: "absolute", bottom: 4, left: 4,
+                               font: `700 9px/1 ${mono}`, color: T.paper,
+                               background: "rgba(0,0,0,0.65)", padding: "2px 5px", borderRadius: 3 }}>
+                  S{i + 1}
+                </span>
+              </div>
+              <PromptBox label={`shot ${i + 1} prompt`} text={s.keyframe_prompt} />
+            </div>
+          ))}
+          {keyed.length > 8 && (
+            <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>+{keyed.length - 8} more shots</div>
+          )}
+        </div>
+      );
     }
-    if (stageName === "generate_clips") {
-      const shots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
-      const done = shots.filter(s => s.clip_uri).length;
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done}/{shots.length} clips generated</div>;
-    }
+
     if (stageName === "cast_voices") {
       const cast = project.voice_cast || {};
       const entries = Object.entries(cast);
@@ -186,9 +254,101 @@ function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }
         </div>
       ) : null;
     }
-    if (stageName === "generate_music") {
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Music bed generated · {stageRecord?.model_used || "—"}</div>;
+
+    if (stageName === "generate_dialogue") {
+      const withAudio = allShots.filter(s => s.dialogue_audio_uri);
+      return withAudio.length === 0
+        ? <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{allShots.length} shot(s) · no audio yet</div>
+        : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{withAudio.length}/{allShots.length} shots with dialogue</div>
+            {withAudio.slice(0, 3).map((s, i) => (
+              <div key={s.id} style={{ display: "grid", gap: 4 }}>
+                <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>
+                  {(s.dialogue || []).map(l => `${l.character}: ${l.text}`).join(" / ").slice(0, 100) || `Shot ${i + 1}`}
+                </div>
+                <audio controls src={studioApiCalls.mediaUrl(s.dialogue_audio_uri)} style={{ width: "100%" }} />
+              </div>
+            ))}
+            {withAudio.length > 3 && <div style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>+{withAudio.length - 3} more shots</div>}
+          </div>
+        );
     }
+
+    if (stageName === "generate_music") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>
+            Music bed · {stageRecord?.model_used || "—"}
+          </div>
+          {project.music_uri && (
+            <audio controls src={studioApiCalls.mediaUrl(project.music_uri)} style={{ width: "100%" }} />
+          )}
+          <PromptBox text={project.music_prompt} />
+        </div>
+      );
+    }
+
+    if (stageName === "generate_clips") {
+      const clipped = allShots.filter(s => s.clip_uri);
+      const realClips = clipped.filter(s => !s.clip_uri.endsWith(".json"));
+      return (
+        <div style={{ display: "grid", gap: 12 }}>
+          {realClips.length > 0
+            ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+                {realClips.slice(0, 4).map(s => (
+                  <video key={s.id} controls src={studioApiCalls.mediaUrl(s.clip_uri)}
+                         style={{ width: "100%", borderRadius: 6, border: `1px solid ${T.line2}` }} />
+                ))}
+              </div>
+            )
+            : <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>
+                {clipped.length} clip{clipped.length !== 1 ? "s" : ""} generated · mock renderer (no real video provider configured)
+              </div>
+          }
+          {clipped[0]?.clip_prompt && <PromptBox label="clip prompt (shot 1)" text={clipped[0].clip_prompt} />}
+        </div>
+      );
+    }
+
+    if (stageName === "render") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Silent video rendered</div>
+          {project.final_uri && (
+            <video controls src={studioApiCalls.mediaUrl(project.final_uri)}
+                   style={{ width: "100%", maxHeight: 280, borderRadius: 6,
+                            border: `1px solid ${T.line2}` }} />
+          )}
+        </div>
+      );
+    }
+
+    if (stageName === "mix_audio") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Dialogue + music mixed (ducked)</div>
+          {project.master_audio_uri && (
+            <audio controls src={studioApiCalls.mediaUrl(project.master_audio_uri)} style={{ width: "100%" }} />
+          )}
+        </div>
+      );
+    }
+
+    if (stageName === "mux") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Final video with audio</div>
+          {project.final_av_uri && (
+            <video controls src={studioApiCalls.mediaUrl(project.final_av_uri)}
+                   style={{ width: "100%", maxHeight: 280, borderRadius: 6,
+                            border: `1px solid ${T.line2}` }} />
+          )}
+        </div>
+      );
+    }
+
     return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Stage complete</div>;
   })();
 
@@ -341,7 +501,7 @@ function Dashboard({ go, studioIdx, studioRunning, pending, usageData, livePendi
 
 function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, failedStage,
   concept, setConcept, reviewMode, setReviewMode, awaitingStageName, activeProject,
-  onApproveStage, onRejectStage, isMobile }) {
+  onApproveStage, onRejectStage, onTrack, isMobile }) {
   const kids = genre === "kids_cartoon";
 
   // Build a map of stage key -> status from live project data
@@ -475,12 +635,12 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
             ▸ final_av.mp4 — video + ducked, synced audio</div>}
         </Panel>
       </div>
-      <ProjectsGallery />
+      <ProjectsGallery onTrack={onTrack} />
     </div>
   );
 }
 
-function ProjectsGallery() {
+function ProjectsGallery({ onTrack }) {
   const [playing, setPlaying] = useState(null);
   const { data, isLoading } = useQuery({
     queryKey: ['all-projects'],
@@ -543,7 +703,10 @@ function ProjectsGallery() {
               {isDone && (
                 <Btn kind="ok" icon={Play} onClick={() => setPlaying(p)}>Watch</Btn>
               )}
-              {!isDone && <span />}
+              {!isDone && (isRunning || isAwaiting || hasFail) && onTrack && (
+                <Btn kind="ghost" icon={Radio} onClick={() => onTrack(p.id)}>Track</Btn>
+              )}
+              {!isDone && !isRunning && !isAwaiting && !hasFail && <span />}
               <span style={{ font: `500 10px/1 ${mono}`, color: T.faint, fontSize: 9 }}>
                 {p.id.slice(0, 8)}
               </span>
@@ -923,11 +1086,16 @@ export default function PlatformConsole({ onLoginRequest }) {
   const [concept, setConcept] = useState("A shy turtle learns to share with forest friends");
   const [idx, setIdx] = useState(STAGES.length);   // start "complete"
   const [running, setRunning] = useState(false);
-  const [studioProjectId, setStudioProjectId] = useState(null);
+  const [studioProjectId, setStudioProjectId] = useState(
+    () => localStorage.getItem('studio_active_project') || null
+  );
   const [routing, setRouting] = useState({});
   const qc = useQueryClient();
   const { isLoggedIn, logout, user } = useAuth();
   const isAdmin = user?.role === "admin";
+
+  const [reviewMode, setReviewMode] = useState(false);
+  const [reviewPending, setReviewPending] = useState(false);
 
   const { data: providersData } = useQuery({ queryKey: ['providers'], queryFn: modelsApi.getProviders, staleTime: 60_000 });
   const { data: routingConfig } = useQuery({ queryKey: ['routing-config'], queryFn: modelsApi.getConfig, staleTime: 30_000 });
@@ -979,9 +1147,6 @@ export default function PlatformConsole({ onLoginRequest }) {
   const livePending = runsData?.items ? runsData.items.filter(r => r.status === 'awaiting_approval').length : null;
   const liveRuns = runsData?.items || [];
 
-  const [reviewMode, setReviewMode] = useState(false);
-  const [reviewPending, setReviewPending] = useState(false);
-
   const [freeOnly, setFreeOnly] = useState(true);
   const [approvals, setApprovals] = useState([
     { id: 1, to: "dana@solarbright.com", subject: "Quick question, Dana",
@@ -1016,6 +1181,7 @@ export default function PlatformConsole({ onLoginRequest }) {
     setReviewPending(false);
     try {
       const { id } = await studioApiCalls.createProject(concept, genre, reviewMode);
+      localStorage.setItem('studio_active_project', id);
       setStudioProjectId(id);
       await studioApiCalls.runProject(id, { background: true });
     } catch (e) {
@@ -1037,7 +1203,14 @@ export default function PlatformConsole({ onLoginRequest }) {
     setRunning(false);
     setReviewPending(false);
     setIdx(0);
+    localStorage.removeItem('studio_active_project');
     setStudioProjectId(null);
+  }
+
+  function trackProject(id) {
+    localStorage.setItem('studio_active_project', id);
+    setStudioProjectId(id);
+    setView('studio');
   }
 
   async function approveStage(stageName, note = '') {
@@ -1209,6 +1382,7 @@ export default function PlatformConsole({ onLoginRequest }) {
               activeProject={activeProject}
               onApproveStage={approveStage}
               onRejectStage={rejectStage}
+              onTrack={trackProject}
               isMobile={isMobile}
             />
           )}

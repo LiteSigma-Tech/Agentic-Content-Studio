@@ -20,6 +20,7 @@ from model_gateway import (
     ConfigStore, LLMMessage, NoEligibleProvider, ProviderError, Router,
     RoutingConfig, build_registry,
 )
+from model_gateway.config import apply_env_overrides
 
 _CFG_PATH = os.getenv("ROUTING_CONFIG", str(Path(__file__).resolve().parent.parent / "routing.yaml"))
 
@@ -35,6 +36,8 @@ app.add_middleware(
 
 registry = build_registry()
 store = ConfigStore.from_yaml(_CFG_PATH)
+# Apply env var model overrides on top of YAML defaults
+apply_env_overrides(store.get())
 router = Router(registry, store)
 
 try:

@@ -15,10 +15,18 @@ from .providers.media import (
     ReplicateTTSProvider, ReplicateMusicProvider,
     HuggingFaceImageProvider, HuggingFaceTTSProvider, HuggingFaceMusicProvider,
     DeepgramTTSProvider,
-    KlingVideoProvider, HunyuanVideoProvider, MochiVideoProvider,
+    MiniMaxVideoProvider, HailuoVideoProvider, SeedanceVideoProvider,
+    RunPodComfyUIImageProvider, WanVideoProvider,
+    GeminiImageProvider, GeminiVeoProvider,
     RunwayMLVideoProvider, LumaVideoProvider,
 )
 from .registry import Registry
+
+
+def _key(name: str) -> str:
+    """Read an env var and strip whitespace + inline shell comments."""
+    val = os.getenv(name) or ""
+    return val.split("#")[0].strip()
 
 
 def build_registry() -> Registry:
@@ -66,18 +74,14 @@ def build_registry() -> Registry:
             est_latency_s=6.0))
 
     # Deepgram TTS — free tier, high quality, no rate-limit issues.
-    deepgram_key = os.getenv("DEEPGRAM_API_KEY")
+    deepgram_key = _key("DEEPGRAM_API_KEY")
     if deepgram_key:
         reg.register("tts", DeepgramTTSProvider(deepgram_key))
 
-    # Hugging Face Inference API — free tier, image only via router endpoint.
-    # TTS/music models are not supported by router.huggingface.co/hf-inference.
-    hf_token = os.getenv("HF_API_TOKEN")
+    # Hugging Face Inference API — image models are no longer supported by the
+    # hf-inference router (all return 410). HF token is still used for LLM fallback.
+    hf_token = _key("HF_API_TOKEN")
     if hf_token:
-        reg.register("image", HuggingFaceImageProvider(
-            "hf/flux-schnell", "black-forest-labs/FLUX.1-schnell",
-            hf_token, {Cap.MODERATION_OK},
-            est_cost_usd=0.0, est_latency_s=15.0, quality=7))
         # HF as free LLM fallback (Mistral-7B via hf-inference router)
         reg.register("llm", LiteLLMProvider(
             model_id="hf/mistral-7b",
@@ -88,31 +92,22 @@ def build_registry() -> Registry:
 
     # Replicate — hosted GPU inference, pay per run.
     # Model slugs: visit replicate.com to confirm they're still live.
-    replicate_token = os.getenv("REPLICATE_API_TOKEN")
+    replicate_token = _key("REPLICATE_API_TOKEN")
     if replicate_token:
         reg.register("image", ReplicateImageProvider(
             "replicate/flux-schnell", "black-forest-labs/flux-schnell",
             replicate_token, {Cap.MODERATION_OK},
             est_cost_usd=0.005, est_latency_s=10.0, quality=8))
-        # Video providers — registered best-quality first so routing.yaml
-        # "route_order" naturally falls through in quality order.
-        reg.register("video", KlingVideoProvider(
-            "replicate/kling", "kwai-kolors/kling-video",
+        # MiniMax Hailuo video-01 — photorealistic T2V, confirmed working slug.
+        reg.register("video", MiniMaxVideoProvider(
+            "replicate/minimax", "minimax/video-01",
+            replicate_token, {Cap.MODERATION_OK},
+            est_cost_usd=0.06, est_latency_s=120.0, quality=8))
+        # Seedance-1-Lite — ByteDance T2V + I2V, ~$0.03/s (3.6M runs on Replicate).
+        reg.register("video", SeedanceVideoProvider(
+            "replicate/seedance-1-lite", "bytedance/seedance-1-lite",
             replicate_token, {Cap.IMAGE_INIT, Cap.MODERATION_OK},
-            est_cost_usd=0.028, est_latency_s=90.0, quality=8))
-        reg.register("video", HunyuanVideoProvider(
-            "replicate/hunyuan", "tencent/hunyuan-video",
-            replicate_token, {Cap.MODERATION_OK},
-            est_cost_usd=0.035, est_latency_s=180.0, quality=8))
-        reg.register("video", MochiVideoProvider(
-            "replicate/mochi", "genmoai/mochi-1",
-            replicate_token, {Cap.MODERATION_OK},
-            est_cost_usd=0.015, est_latency_s=120.0, quality=7))
-        reg.register("video", ReplicateVideoProvider(
-            "replicate/animate-diff", "lucataco/animate-diff",
-            replicate_token, {Cap.MODERATION_OK},
-            est_cost_usd=0.05, est_latency_s=60.0, quality=7,
-            version="beecf59c4aee8d81bf04f0381033dfa10dc16e845b4ae00d281e2fa377e48a9f"))
+            est_cost_usd=0.15, est_latency_s=90.0, quality=8))
         reg.register("tts", ReplicateTTSProvider(
             "replicate/kokoro", "jaaari/kokoro-82m",
             replicate_token, {Cap.MULTI_SPEAKER, Cap.MODERATION_OK},
@@ -124,13 +119,50 @@ def build_registry() -> Registry:
             est_cost_usd=0.01, est_latency_s=30.0, quality=7,
             version="671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb"))
 
+    # Wan 2.2 TI2V-5B — scale-to-0 GPU via Modal or RunPod (WAN_BACKEND selects)
+    wan_backend    = _key("WAN_BACKEND")      # "modal" or "runpod"
+    modal_url      = _key("MODAL_ENDPOINT_URL")
+    runpod_key     = _key("RUNPOD_API_KEY")
+    runpod_wan_ep  = _key("RUNPOD_WAN_ENDPOINT_ID")
+    wan_ready = (wan_backend == "modal" and modal_url) or \
+                (wan_backend == "runpod" and runpod_key and runpod_wan_ep)
+    if wan_backend and wan_ready:
+        reg.register("video", WanVideoProvider(
+            backend=wan_backend,
+            modal_url=modal_url,
+            runpod_key=runpod_key,
+            runpod_endpoint=runpod_wan_ep,
+        ))
+
+    # RunPod ComfyUI FLUX.1-dev-fp8 — serverless image generation, no Docker build.
+    # Create endpoint at runpod.io → Serverless → New Endpoint → ComfyUI template.
+    comfyui_ep = _key("RUNPOD_COMFYUI_ENDPOINT_ID")
+    if runpod_key and comfyui_ep:
+        reg.register("image", RunPodComfyUIImageProvider(runpod_key, comfyui_ep))
+
+    # Hailuo-02 (MiniMax direct API) — ~$0.04/s, cheaper than Replicate.
+    minimax_key = _key("MINIMAX_API_KEY")
+    if minimax_key:
+        reg.register("video", HailuoVideoProvider(minimax_key))
+
+    # FAL_KEY reserved for future fal.ai providers (Kling, Wan, etc.)
+    # Seedance is on Replicate — registered above with replicate_token.
+
+    # Google Gemini image + video — FREE tier, same key for both
+    gemini_key = _key("GEMINI_API_KEY")
+    if gemini_key:
+        # Gemini 3.1 Flash Image — free, replaces replicate/flux-schnell
+        reg.register("image", GeminiImageProvider(gemini_key, "gemini-3.1-flash-image"))
+        # Gemini Veo 3.1 — free video generation
+        reg.register("video", GeminiVeoProvider(gemini_key))
+
     # Runway Gen-4 Turbo — best quality, requires RUNWAYML_API_KEY.
-    runway_key = os.getenv("RUNWAYML_API_KEY")
+    runway_key = _key("RUNWAYML_API_KEY")
     if runway_key:
         reg.register("video", RunwayMLVideoProvider(runway_key, "gen4_turbo"))
 
     # Luma Dream Machine — cinematic quality, requires LUMAAI_API_KEY.
-    luma_key = os.getenv("LUMAAI_API_KEY")
+    luma_key = _key("LUMAAI_API_KEY")
     if luma_key:
         reg.register("video", LumaVideoProvider(luma_key))
 

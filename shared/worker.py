@@ -18,7 +18,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 
 
-async def studio_pipeline_run(ctx, project_id: str, force_from: str | None = None):
+async def studio_pipeline_run(ctx, project_id: str,
+                              force_from: str | None = None,
+                              no_review: bool = False):
     """Run (or resume) a studio pipeline project in a worker process."""
     from video_studio.gateway_client import HttpGateway, InProcessGateway
     from video_studio.store import ProjectStore
@@ -29,7 +31,8 @@ async def studio_pipeline_run(ctx, project_id: str, force_from: str | None = Non
     gw = (HttpGateway(os.environ["GATEWAY_URL"]) if os.getenv("GATEWAY_URL")
           else InProcessGateway(routing))
     pipeline = full_pipeline(gw, store)
-    await asyncio.to_thread(pipeline.run, project_id, force_from=force_from)
+    await asyncio.to_thread(pipeline.run, project_id,
+                            force_from=force_from, no_review=no_review)
 
 
 async def agent_run_execute(ctx, run_id: str):

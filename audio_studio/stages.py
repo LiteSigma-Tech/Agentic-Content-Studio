@@ -18,6 +18,29 @@ from video_studio.stages import StageContext
 
 from . import synth, voices
 
+_ENRICH_MUSIC = """\
+You are an expert music supervisor writing briefs for an AI music generation model.
+Rewrite the prompt below into a detailed music brief. Specify:
+- Instrumentation (e.g. "acoustic guitar, sparse drums, warm bass")
+- Tempo and energy (e.g. "moderato, 90 BPM, building energy")
+- Mood arc (e.g. "starts tentative, swells into confident resolution")
+- Production style (e.g. "lo-fi indie, dry room, close-mic'd")
+Keep it under 80 words.
+Output ONLY the enhanced brief — no preamble, no explanation, no quotes."""
+
+
+def _enrich_music_prompt(ctx: StageContext, raw: str) -> str:
+    try:
+        res = ctx.gw.llm(
+            "script_writing",
+            [{"role": "user", "content": f"{_ENRICH_MUSIC}\n\nOriginal prompt:\n{raw}"}],
+            json_mode=False,
+        )
+        enriched = res.text.strip().strip('"').strip("'")
+        return enriched if len(enriched) > 20 else raw
+    except Exception:
+        return raw
+
 
 def _audio_dir(ctx: StageContext) -> Path:
     d = ctx.media_dir / "audio"
@@ -50,6 +73,7 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
 
         # One TTS call per Line so each character speaks in their own voice.
         line_paths: list[Path] = []
+        line_chars: list[str] = []
         secs_per_line = sh.seconds / max(1, len(sh.dialogue))
         for i, ln in enumerate(sh.dialogue):
             if not ln.text.strip():
@@ -66,11 +90,17 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
                 seconds = synth.estimate_speech_seconds(ln.text, secs_per_line)
                 synth.synth_speech(ln.text, voices.get(voice_id), seconds, line_dst)
             line_paths.append(line_dst)
+            line_chars.append(ln.character)
 
         if not line_paths:
             continue
+        # Insert natural pauses: 350 ms when speaker changes, 120 ms otherwise.
+        gaps_ms = [
+            350 if line_chars[i] != line_chars[i + 1] else 120
+            for i in range(len(line_chars) - 1)
+        ]
         dst = out_dir / f"dlg_{sh.id}.wav"
-        synth.concat_audio(line_paths, dst)
+        synth.concat_audio(line_paths, dst, gaps_ms=gaps_ms)
         sh.dialogue_audio_uri = str(dst)
     return model or "n/a", cost
 
@@ -83,10 +113,13 @@ def generate_music(project: Project, ctx: StageContext) -> tuple[str, float]:
         project.music_uri = None  # re-generate if missing or wrong format
     tpl = template_for(project.genre)
     total = sum(sh.seconds for sh in project.all_shots()) or 5.0
-    music_prompt = f"{tpl.tone} background score for '{project.title}'"
+    base = (f"{tpl.tone} background score for '{project.title}'. "
+            f"Duration: {total:.0f} seconds. Genre feel: {project.genre}.")
     override = project.prompt_overrides.get("generate_music", "")
     if override:
-        music_prompt += f". Additional direction: {override}"
+        base += f" Reviewer direction: {override}"
+    music_prompt = _enrich_music_prompt(ctx, base)
+    project.music_prompt = music_prompt
     res = ctx.gw.music("default", music_prompt,
                        seconds=total, required_caps=tpl.required_caps)
     dst = _audio_dir(ctx) / "music_bed.wav"
@@ -94,7 +127,7 @@ def generate_music(project: Project, ctx: StageContext) -> tuple[str, float]:
         # Convert to WAV — handles MP3/WAV from any music provider.
         synth._ff(["-i", res.uri, "-ac", "2", "-ar", str(synth._SR), str(dst)])
     else:
-        synth.synth_music(total, dst)
+        synth.synth_music(total, dst, genre=project.genre.value)
     project.music_uri = str(dst)
     return res.model_used, res.cost_usd
 

@@ -35,8 +35,10 @@ def get(voice_id: str) -> Voice:
 
 
 def cast_for(characters: list[str], genre: str) -> dict[str, str]:
-    """Assign a stable voice to each character. Alternates pools so two
-    characters in a scene don't share a voice."""
+    """Assign a stable voice to each character using distinct Deepgram voices."""
+    # kids: bright female + playful male
+    # adults: warm female / deep male / bright female — all map to different Deepgram voices
+    # (vo_narrator is intentionally excluded: it shares aura-2-orion-en with vo_deep_m)
     pool = (["vo_bright_f", "vo_playful_m"] if genre == "kids_cartoon"
-            else ["vo_warm_f", "vo_deep_m", "vo_narrator"])
+            else ["vo_warm_f", "vo_deep_m", "vo_bright_f", "vo_playful_m"])
     return {name: pool[i % len(pool)] for i, name in enumerate(sorted(characters))}

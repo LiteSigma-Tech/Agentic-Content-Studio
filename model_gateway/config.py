@@ -4,9 +4,28 @@ Model selection lives in data (YAML / DB row), not code. Each task has a
 default model plus an ordered fallback chain. A policy block controls cost
 ceilings and ordering preference. Changing this config changes which model
 the *next* job uses — no redeploy.
+
+Environment variable overrides
+-------------------------------
+Any default model can be overridden at runtime without touching routing.yaml
+or redeploying. Set the relevant env var and restart the gateway.
+
+  LLM_SCRIPT_WRITING_MODEL    overrides llm.script_writing.default
+  LLM_AGENT_REASONING_MODEL   overrides llm.agent_reasoning.default
+  LLM_KIDS_CONTENT_MODEL      overrides llm.kids_content.default
+  IMAGE_MODEL                 overrides image.default.default
+  VIDEO_MODEL                 overrides video.default.default
+  TTS_MODEL                   overrides tts.default.default
+  MUSIC_MODEL                 overrides music.default.default
+  ROUTING_MAX_COST_USD        overrides policy.max_cost_per_job_usd
+  ROUTING_PREFER              overrides policy.prefer
+
+The YAML value is always the documented fallback so the file stays as the
+source of truth — env vars are runtime overrides only.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import yaml
@@ -45,6 +64,78 @@ class RoutingConfig(BaseModel):
         if "default" in tasks:
             return tasks["default"]
         raise KeyError(f"No route for modality={modality!r} task={task!r}")
+
+
+def _env(name: str) -> str:
+    """Read env var, strip whitespace and inline shell comments."""
+    val = os.getenv(name) or ""
+    return val.split("#")[0].strip()
+
+
+# Maps env var name → (modality, task) in the routing config
+_ROUTE_ENV_MAP: list[tuple[str, str, str]] = [
+    ("LLM_SCRIPT_WRITING_MODEL",  "llm",   "script_writing"),
+    ("LLM_AGENT_REASONING_MODEL", "llm",   "agent_reasoning"),
+    ("LLM_KIDS_CONTENT_MODEL",    "llm",   "kids_content"),
+    ("IMAGE_MODEL",               "image", "default"),
+    ("VIDEO_MODEL",               "video", "default"),
+    ("TTS_MODEL",                 "tts",   "default"),
+    ("MUSIC_MODEL",               "music", "default"),
+]
+
+
+def apply_env_overrides(cfg: RoutingConfig) -> RoutingConfig:
+    """Apply env var model overrides on top of the YAML/DB routing config.
+
+    Called at gateway startup so env vars take effect without touching
+    routing.yaml.  Only non-empty env vars are applied; unset vars leave
+    the YAML default untouched.
+    """
+    changed = False
+
+    for env_var, modality, task in _ROUTE_ENV_MAP:
+        model = _env(env_var)
+        if not model:
+            continue
+        route = cfg.routing.setdefault(modality, {}).get(task)
+        if route is None:
+            # Task not in config at all — create a minimal route
+            cfg.routing[modality][task] = TaskRoute(default=model)
+            changed = True
+        elif route.default != model:
+            # Prepend the env-specified model as the new default,
+            # keeping the old default as the first fallback so it's
+            # still tried if the env-specified model isn't registered.
+            old_default = route.default
+            route.default = model
+            if old_default not in route.fallbacks:
+                route.fallbacks = [old_default, *route.fallbacks]
+            changed = True
+
+    # Policy overrides
+    max_cost = _env("ROUTING_MAX_COST_USD")
+    if max_cost:
+        try:
+            cfg.policy.max_cost_per_job_usd = float(max_cost)
+            changed = True
+        except ValueError:
+            pass
+
+    prefer = _env("ROUTING_PREFER")
+    if prefer in ("route_order", "cheapest", "fastest", "best_quality"):
+        cfg.policy.prefer = prefer
+        changed = True
+
+    if changed:
+        overrides = {e: _env(e) for e, _, _ in _ROUTE_ENV_MAP if _env(e)}
+        if max_cost:
+            overrides["ROUTING_MAX_COST_USD"] = max_cost
+        if prefer:
+            overrides["ROUTING_PREFER"] = prefer
+        names = ", ".join(f"{k}={v}" for k, v in overrides.items())
+        print(f"[gateway] env overrides applied: {names}")
+
+    return cfg
 
 
 class ConfigStore:
