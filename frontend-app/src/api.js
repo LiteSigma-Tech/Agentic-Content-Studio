@@ -78,7 +78,6 @@ export const studioApiCalls = {
   getProject: id =>
     studioApi.get('/v1/projects/' + id).then(r => r.data),
   videoUrl: id => `${STUDIO}/v1/projects/${id}/video`,
-  mediaUrl: uri => uri ? `${STUDIO}/v1/media?path=${encodeURIComponent(uri)}` : null,
   approveStage: (id, stage, note = '') =>
     studioApi.post(`/v1/projects/${id}/stages/${stage}/approve`, { note, background: true }).then(r => r.data),
   rejectStage: (id, stage, prompt_override = '', note = '') =>

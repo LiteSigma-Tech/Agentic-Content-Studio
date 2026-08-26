@@ -4,10 +4,25 @@ import { auth } from './api'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const PROTOTYPE_NO_AUTH = true
+  // PROTOTYPE ONLY — bypasses real login. Set to false / remove before any real deployment.
+  const prototypeUser = {
+    id: 'prototype-admin',
+    name: 'Prototype Admin',
+    role: 'admin',
+    tenant: 'Prototype Tenant',
+  }
+
+  const [user, setUser] = useState(PROTOTYPE_NO_AUTH ? prototypeUser : null)
+  const [loading, setLoading] = useState(PROTOTYPE_NO_AUTH ? false : true)
 
   useEffect(() => {
+    if (PROTOTYPE_NO_AUTH) {
+      setUser(prototypeUser)
+      setLoading(false)
+      return
+    }
+
     if (auth.isLoggedIn()) {
       auth.whoami()
         .then(setUser)
@@ -23,6 +38,11 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = async (email, password) => {
+    if (PROTOTYPE_NO_AUTH) {
+      setUser(prototypeUser)
+      return prototypeUser
+    }
+
     await auth.login(email, password)
     const me = await auth.whoami()
     setUser(me)
@@ -30,6 +50,11 @@ export function AuthProvider({ children }) {
   }
 
   const logout = async () => {
+    if (PROTOTYPE_NO_AUTH) {
+      setUser(null)
+      return
+    }
+
     await auth.logout()
     setUser(null)
   }
