@@ -49,39 +49,6 @@ function Panel({ children, style }) {
   return <div style={{ background: T.panel, border: `1px solid ${T.line}`,
     borderRadius: 10, ...style }}>{children}</div>;
 }
-function EmptyState({ title, body, action }) {
-  return <div style={{ marginTop: 10, padding: "11px 12px", background: T.panel2,
-    border: `1px solid ${T.line}`, borderRadius: 7 }}>
-    <div style={{ font: `600 11px/1.3 ${sans}`, color: T.paper }}>{title}</div>
-    <div style={{ font: `400 11px/1.45 ${sans}`, color: T.faint, marginTop: 4 }}>{body}</div>
-    {action && <div style={{ font: `500 10px/1.4 ${mono}`, color: T.muted, marginTop: 7 }}>{action}</div>}
-  </div>;
-}
-function errorGuidance(error, fallback = "Action failed.") {
-  const status = error?.response?.status;
-  const detail = error?.response?.data?.detail;
-  const message = typeof detail === "string" ? detail : detail?.message || error?.message || fallback;
-  const capability = detail?.capability || detail?.task || detail?.stage || detail?.provider_task;
-  if (status === 403) return { title: "Not allowed", body: "Your current role does not have permission for this action. Ask an admin for the matching RBAC permission.", detail: message };
-  if (status === 409) return { title: "No eligible provider", body: capability ? `No provider is eligible for ${capability}. Open Models and check free-only routing plus required capabilities.` : "The API did not return a specific task or capability. Open Models and check free-only routing plus required capabilities.", detail: message };
-  if (status === 429) return { title: "Rate limit reached", body: "This tenant has exhausted its request bucket. Wait a moment before retrying so the queue can recover.", detail: message };
-  if (status === 402) return { title: "Quota exceeded", body: "The tenant spend or job cap has been reached. Review usage and plan limits before running more work.", detail: message };
-  if (status === 422) return { title: "Check the form", body: "The backend rejected one or more fields. Review required values and try again.", detail: message };
-  return { title: fallback, body: "The request did not complete. If this keeps happening, check the service status and try again.", detail: message };
-}
-function ErrorBanner({ error }) {
-  if (!error) return null;
-  return <Panel style={{ padding: 12, border: `1px solid ${T.clay}55`, background: `${T.clay}0F` }}>
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-      <AlertTriangle size={14} color={T.clay} style={{ flexShrink: 0, marginTop: 1 }} />
-      <div>
-        <Eyebrow color={T.clay}>{error.title}</Eyebrow>
-        <div style={{ font: `400 11px/1.45 ${sans}`, color: T.muted, marginTop: 5 }}>{error.body}</div>
-        {error.detail && <div style={{ font: `500 10px/1.45 ${mono}`, color: T.faint, marginTop: 6 }}>{error.detail}</div>}
-      </div>
-    </div>
-  </Panel>;
-}
 function Pill({ status, label }) {
   const c = SC[status] || T.muted;
   return <span style={{ font: `600 10px/1 ${mono}`, letterSpacing: ".08em",
@@ -166,6 +133,31 @@ function SignalChain({ idx, running, failedIdx, stageStatuses = {} }) {
   );
 }
 
+/* ── prompt inspector ──────────────────────────────────────────────────── */
+function PromptBox({ label = "prompt sent to model", text }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        background: "none", border: `1px solid ${T.line2}`, cursor: "pointer",
+        font: `600 9px/1 ${mono}`, color: T.faint, letterSpacing: ".1em",
+        textTransform: "uppercase", padding: "3px 8px", borderRadius: 4,
+      }}>
+        {open ? "▾" : "▸"} {label}
+      </button>
+      {open && (
+        <pre style={{
+          margin: "6px 0 0", padding: "10px 12px",
+          background: T.ink, border: `1px solid ${T.line2}`, borderRadius: 6,
+          font: `400 10px/1.6 ${mono}`, color: T.faint,
+          whiteSpace: "pre-wrap", wordBreak: "break-word", overflowX: "auto",
+        }}>{text}</pre>
+      )}
+    </div>
+  );
+}
+
 /* ── stage review banner ───────────────────────────────────────────────── */
 function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }) {
   const [showOverride, setShowOverride] = useState(false);
@@ -176,36 +168,79 @@ function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }
   const stageRecord = project?.stages?.find(s => s.name === stageName);
   const canOverride = PROMPT_OVERRIDE_STAGES.has(stageName);
 
-  // Build a summary of what the stage produced
+  // Build a summary of what the stage produced (output + prompt inspector)
   const summary = (() => {
     if (!project) return null;
+    const allShots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
+
     if (stageName === "write_script") {
       const ep = project.episode;
       if (!ep) return null;
-      const shots = (ep.scenes || []).flatMap(sc => sc.shots || []);
       const charNames = (project.characters || []).map(c => c.name).join(", ");
       return (
         <div style={{ display: "grid", gap: 6 }}>
           {ep.logline && <div style={{ font: `400 12px/1.5 ${sans}`, color: T.paper }}>{ep.logline}</div>}
           {charNames && <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Characters: {charNames}</div>}
-          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{shots.length} shots across {(ep.scenes || []).length} scene(s)</div>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{allShots.length} shots across {(ep.scenes || []).length} scene(s)</div>
+          <PromptBox text={project.script_prompt} />
         </div>
       );
     }
+
     if (stageName === "design_characters") {
-      const done = (project.characters || []).filter(c => c.reference_uri).length;
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done} character reference image{done !== 1 ? "s" : ""} generated</div>;
+      const chars = project.characters || [];
+      return (
+        <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
+            {chars.map(ch => (
+              <div key={ch.name}>
+                {ch.reference_uri
+                  ? <img src={studioApiCalls.mediaUrl(ch.reference_uri)} alt={ch.name}
+                         style={{ width: "100%", aspectRatio: "1", objectFit: "cover",
+                                  borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
+                  : <div style={{ width: "100%", aspectRatio: "1", background: T.panel2, borderRadius: 6,
+                                  display: "grid", placeItems: "center" }}>
+                      <span style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>no image</span>
+                    </div>
+                }
+                <div style={{ font: `600 10px/1.3 ${sans}`, color: T.muted, marginTop: 5,
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {ch.name}
+                </div>
+                <PromptBox label="image prompt" text={ch.image_prompt} />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
     }
+
     if (stageName === "generate_keyframes") {
-      const shots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
-      const done = shots.filter(s => s.keyframe_uri).length;
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done}/{shots.length} keyframes generated</div>;
+      const keyed = allShots.filter(s => s.keyframe_uri);
+      return keyed.length === 0 ? null : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {keyed.slice(0, 8).map((s, i) => (
+            <div key={s.id} style={{ display: "grid", gap: 6 }}>
+              <div style={{ position: "relative" }}>
+                <img src={studioApiCalls.mediaUrl(s.keyframe_uri)} alt={`Shot ${i + 1}`}
+                     style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover",
+                              borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
+                <span style={{ position: "absolute", bottom: 4, left: 4,
+                               font: `700 9px/1 ${mono}`, color: T.paper,
+                               background: "rgba(0,0,0,0.65)", padding: "2px 5px", borderRadius: 3 }}>
+                  S{i + 1}
+                </span>
+              </div>
+              <PromptBox label={`shot ${i + 1} prompt`} text={s.keyframe_prompt} />
+            </div>
+          ))}
+          {keyed.length > 8 && (
+            <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>+{keyed.length - 8} more shots</div>
+          )}
+        </div>
+      );
     }
-    if (stageName === "generate_clips") {
-      const shots = (project.episode?.scenes || []).flatMap(sc => sc.shots || []);
-      const done = shots.filter(s => s.clip_uri).length;
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{done}/{shots.length} clips generated</div>;
-    }
+
     if (stageName === "cast_voices") {
       const cast = project.voice_cast || {};
       const entries = Object.entries(cast);
@@ -219,9 +254,101 @@ function StageReviewBanner({ project, stageName, onApprove, onReject, disabled }
         </div>
       ) : null;
     }
-    if (stageName === "generate_music") {
-      return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Music bed generated · {stageRecord?.model_used || "—"}</div>;
+
+    if (stageName === "generate_dialogue") {
+      const withAudio = allShots.filter(s => s.dialogue_audio_uri);
+      return withAudio.length === 0
+        ? <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{allShots.length} shot(s) · no audio yet</div>
+        : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{withAudio.length}/{allShots.length} shots with dialogue</div>
+            {withAudio.slice(0, 3).map((s, i) => (
+              <div key={s.id} style={{ display: "grid", gap: 4 }}>
+                <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>
+                  {(s.dialogue || []).map(l => `${l.character}: ${l.text}`).join(" / ").slice(0, 100) || `Shot ${i + 1}`}
+                </div>
+                <audio controls src={studioApiCalls.mediaUrl(s.dialogue_audio_uri)} style={{ width: "100%" }} />
+              </div>
+            ))}
+            {withAudio.length > 3 && <div style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>+{withAudio.length - 3} more shots</div>}
+          </div>
+        );
     }
+
+    if (stageName === "generate_music") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>
+            Music bed · {stageRecord?.model_used || "—"}
+          </div>
+          {project.music_uri && (
+            <audio controls src={studioApiCalls.mediaUrl(project.music_uri)} style={{ width: "100%" }} />
+          )}
+          <PromptBox text={project.music_prompt} />
+        </div>
+      );
+    }
+
+    if (stageName === "generate_clips") {
+      const clipped = allShots.filter(s => s.clip_uri);
+      const realClips = clipped.filter(s => !s.clip_uri.endsWith(".json"));
+      return (
+        <div style={{ display: "grid", gap: 12 }}>
+          {realClips.length > 0
+            ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+                {realClips.slice(0, 4).map(s => (
+                  <video key={s.id} controls src={studioApiCalls.mediaUrl(s.clip_uri)}
+                         style={{ width: "100%", borderRadius: 6, border: `1px solid ${T.line2}` }} />
+                ))}
+              </div>
+            )
+            : <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>
+                {clipped.length} clip{clipped.length !== 1 ? "s" : ""} generated · mock renderer (no real video provider configured)
+              </div>
+          }
+          {clipped[0]?.clip_prompt && <PromptBox label="clip prompt (shot 1)" text={clipped[0].clip_prompt} />}
+        </div>
+      );
+    }
+
+    if (stageName === "render") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Silent video rendered</div>
+          {project.final_uri && (
+            <video controls src={studioApiCalls.mediaUrl(project.final_uri)}
+                   style={{ width: "100%", maxHeight: 280, borderRadius: 6,
+                            border: `1px solid ${T.line2}` }} />
+          )}
+        </div>
+      );
+    }
+
+    if (stageName === "mix_audio") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Dialogue + music mixed (ducked)</div>
+          {project.master_audio_uri && (
+            <audio controls src={studioApiCalls.mediaUrl(project.master_audio_uri)} style={{ width: "100%" }} />
+          )}
+        </div>
+      );
+    }
+
+    if (stageName === "mux") {
+      return (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Final video with audio</div>
+          {project.final_av_uri && (
+            <video controls src={studioApiCalls.mediaUrl(project.final_av_uri)}
+                   style={{ width: "100%", maxHeight: 280, borderRadius: 6,
+                            border: `1px solid ${T.line2}` }} />
+          )}
+        </div>
+      );
+    }
+
     return <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>Stage complete</div>;
   })();
 
@@ -374,9 +501,8 @@ function Dashboard({ go, studioIdx, studioRunning, pending, usageData, livePendi
 
 function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, failedStage,
   concept, setConcept, reviewMode, setReviewMode, awaitingStageName, activeProject,
-  onApproveStage, onRejectStage, isMobile }) {
+  onApproveStage, onRejectStage, onTrack, isMobile }) {
   const kids = genre === "kids_cartoon";
-  const [actionError, setActionError] = useState(null);
 
   // Build a map of stage key -> status from live project data
   const stageStatuses = {};
@@ -384,7 +510,6 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <ErrorBanner error={actionError} />
       {hasFailed && failedStage && (
         <Panel style={{ padding: 14, border: `1px solid ${T.clay}55` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -396,10 +521,7 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
                 </div>
               )}
             </div>
-            <Btn kind="ok" icon={Play} onClick={async () => {
-              setActionError(null);
-              try { await resume(); } catch (e) { setActionError(errorGuidance(e, "Pipeline did not resume.")); }
-            }} disabled={running}>
+            <Btn kind="ok" icon={Play} onClick={resume} disabled={running}>
               {running ? "Resuming…" : "Resume pipeline"}
             </Btn>
           </div>
@@ -410,14 +532,8 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
         <StageReviewBanner
           project={activeProject}
           stageName={awaitingStageName}
-          onApprove={async (stageName, note) => {
-            setActionError(null);
-            try { await onApproveStage(stageName, note); } catch (e) { setActionError(errorGuidance(e, "Stage approval failed.")); }
-          }}
-          onReject={async (stageName, promptOverride, note) => {
-            setActionError(null);
-            try { await onRejectStage(stageName, promptOverride, note); } catch (e) { setActionError(errorGuidance(e, "Stage rejection failed.")); }
-          }}
+          onApprove={onApproveStage}
+          onReject={onRejectStage}
           disabled={running}
         />
       )}
@@ -460,12 +576,9 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
             </button>
           </div>
           <Btn kind="primary" icon={running ? RotateCcw : Play}
-            onClick={running ? undefined : async () => {
-              setActionError(null);
-              try { await run(); } catch (e) { setActionError(errorGuidance(e, "Pipeline did not start.")); }
-            }} disabled={running || !!awaitingStageName}>
+            onClick={running ? undefined : run} disabled={running || !!awaitingStageName}>
             {running ? "Running…" : "Run pipeline"}</Btn>
-          <Btn icon={RotateCcw} onClick={() => { setActionError(null); reset(); }}>Reset</Btn>
+          <Btn icon={RotateCcw} onClick={reset}>Reset</Btn>
         </div>
         {reviewMode && !running && !awaitingStageName && (
           <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8,
@@ -500,10 +613,8 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
                 <span style={{ font: `600 10px/1 ${mono}`, color: T.faint }}>S{i + 1}</span>
                 {s}<span style={{ marginLeft: "auto", font: `500 10px/1 ${mono}`, color: T.muted }}>4.0s</span>
               </div>)}
-            {idx < 1 && <EmptyState
-              title="Shot list waits for the script stage"
-              body="Run the pipeline to generate scenes, shots, and timing from the current concept."
-              action="The signal chain will light up as each stage completes." />}
+            {idx < 1 && <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint }}>
+              Run the pipeline to generate the script and shot list.</div>}
           </div>
         </Panel>
         <Panel style={{ padding: 18 }}>
@@ -515,10 +626,8 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
                 <div style={{ font: `500 11px/1 ${mono}`, color: T.violet }}>{v}</div>
                 <Lamp on color={T.teal} size={7} />
               </div>)}
-            {idx < 7 && <EmptyState
-              title="Voice casting starts in the audio lane"
-              body="Once the pipeline reaches cast voices, speaker assignments appear here and carry into dialogue generation."
-              action="Use review mode if you want to approve the cast before moving on." />}
+            {idx < 7 && <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint }}>
+              Voices are cast once the audio stages begin, then reused across shots.</div>}
           </div>
           {idx >= STAGES.length && <div style={{ marginTop: 14, padding: "10px 12px",
             background: `${T.teal}14`, border: `1px solid ${T.teal}44`, borderRadius: 7,
@@ -526,12 +635,12 @@ function Studio({ genre, setGenre, idx, running, run, reset, resume, hasFailed, 
             ▸ final_av.mp4 — video + ducked, synced audio</div>}
         </Panel>
       </div>
-      <ProjectsGallery />
+      <ProjectsGallery onTrack={onTrack} />
     </div>
   );
 }
 
-function ProjectsGallery() {
+function ProjectsGallery({ onTrack }) {
   const [playing, setPlaying] = useState(null);
   const { data, isLoading } = useQuery({
     queryKey: ['all-projects'],
@@ -548,10 +657,7 @@ function ProjectsGallery() {
       <Eyebrow><Film size={11} style={{ verticalAlign: "-1px" }} /> &nbsp;episode library · {projects.length} project{projects.length !== 1 ? 's' : ''}</Eyebrow>
       {isLoading && <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint, marginTop: 10 }}>Loading…</div>}
       {!isLoading && projects.length === 0 && (
-        <EmptyState
-          title="No episodes in the library yet"
-          body="Run the Studio pipeline once and completed projects will appear here with status, cost, and playback."
-          action="Start from New episode above; failed runs remain resumable." />
+        <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint, marginTop: 10 }}>No projects yet. Run a pipeline above.</div>
       )}
       {playing && (
         <div style={{ marginTop: 14, background: T.ink, borderRadius: 8, overflow: 'hidden',
@@ -597,7 +703,10 @@ function ProjectsGallery() {
               {isDone && (
                 <Btn kind="ok" icon={Play} onClick={() => setPlaying(p)}>Watch</Btn>
               )}
-              {!isDone && <span />}
+              {!isDone && (isRunning || isAwaiting || hasFail) && onTrack && (
+                <Btn kind="ghost" icon={Radio} onClick={() => onTrack(p.id)}>Track</Btn>
+              )}
+              {!isDone && !isRunning && !isAwaiting && !hasFail && <span />}
               <span style={{ font: `500 10px/1 ${mono}`, color: T.faint, fontSize: 9 }}>
                 {p.id.slice(0, 8)}
               </span>
@@ -612,29 +721,24 @@ function ProjectsGallery() {
 function Leads({ approvals, decide, displayLeads, refetchLeads, isMobile }) {
   const pending = approvals.filter((a) => a.status === "pending");
   const leadsToShow = displayLeads && displayLeads.length ? displayLeads : LEADS;
-  const [actionError, setActionError] = useState(null);
 
   const qualified = leadsToShow.filter(l => l.status === 'qualified').length;
   const blocked = leadsToShow.filter(l => l.status === 'blocked').length;
   const contactable = leadsToShow.filter(l => l.status === 'qualified' || (l.status !== 'blocked' && l.status !== 'disqualified')).length;
 
   async function handleSource() {
-    setActionError(null);
-    try { await leadsApiCalls.source(20); refetchLeads(); } catch (e) { setActionError(errorGuidance(e, "Lead sourcing failed.")); }
+    try { await leadsApiCalls.source(20); refetchLeads(); } catch (e) { /* ignore */ }
   }
   async function handleQualify() {
-    setActionError(null);
-    try { await leadsApiCalls.qualify(); refetchLeads(); } catch (e) { setActionError(errorGuidance(e, "Lead qualification failed.")); }
+    try { await leadsApiCalls.qualify(); refetchLeads(); } catch (e) { /* ignore */ }
   }
   async function handleCompliance() {
-    setActionError(null);
-    try { await leadsApiCalls.compliance(); refetchLeads(); } catch (e) { setActionError(errorGuidance(e, "Compliance check failed.")); }
+    try { await leadsApiCalls.compliance(); refetchLeads(); } catch (e) { /* ignore */ }
   }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.3fr 1fr", gap: 16 }}>
       <div style={{ display: "grid", gap: 16 }}>
-        <ErrorBanner error={actionError} />
         <Panel style={{ padding: 18 }}>
           <Eyebrow><Target size={11} style={{ verticalAlign: "-1px" }} /> &nbsp;leads · ICP: renewable energy</Eyebrow>
           <div style={{ marginTop: 12, display: "grid", gap: 1 }}>
@@ -802,7 +906,6 @@ function Admin() {
   const [newKey, setNewKey] = useState(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState("");
-  const [keyRecoveryOpen, setKeyRecoveryOpen] = useState(false);
 
   const [hookForm, setHookForm] = useState({ url: "", events: "run.done,run.failed", secret: "" });
   const [hookErr, setHookErr] = useState("");
@@ -816,7 +919,7 @@ function Admin() {
       setForm({ name: "", email: "", password: "", plan: "free" });
       qc.invalidateQueries(['tenants']);
     } catch (ex) {
-      setErr(errorGuidance(ex, "Tenant creation failed."));
+      setErr(ex?.response?.data?.detail || "creation failed");
     } finally { setCreating(false); }
   }
 
@@ -829,7 +932,7 @@ function Admin() {
       setHookForm({ url: "", events: "run.done,run.failed", secret: "" });
       refetchHooks();
     } catch (ex) {
-      setHookErr(errorGuidance(ex, "Webhook registration failed."));
+      setHookErr(ex?.response?.data?.detail || "registration failed");
     }
   }
 
@@ -848,10 +951,7 @@ function Admin() {
         <Eyebrow color={T.amber}><Users size={11} style={{ verticalAlign: "-1px" }} /> &nbsp;tenants · {tenants.length} total</Eyebrow>
         {isLoading && <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint, marginTop: 10 }}>Loading…</div>}
         {!isLoading && tenants.length === 0 && (
-          <EmptyState
-            title="No tenants visible"
-            body="Create the first tenant below to mint admin credentials and the one-time API key."
-            action="The plaintext API key is shown only once after creation." />
+          <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint, marginTop: 10 }}>No tenants yet. Create one below.</div>
         )}
         {tenants.length > 0 && (
           <div style={{ marginTop: 12, display: "grid", gap: 1 }}>
@@ -895,30 +995,7 @@ function Admin() {
         </Panel>
       )}
 
-      <Panel style={{ padding: 18, border: `1px solid ${T.clay}44` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <Eyebrow color={T.clay}>api key recovery</Eyebrow>
-            <div style={{ font: `400 11px/1.45 ${sans}`, color: T.muted, marginTop: 6 }}>
-              Existing plaintext keys cannot be revealed from the UI. A safe regenerate flow needs a backend endpoint that revokes the old tenant key and returns the replacement once.
-            </div>
-          </div>
-          <Btn kind="danger" icon={RotateCcw} onClick={() => setKeyRecoveryOpen(v => !v)}>
-            Regenerate key
-          </Btn>
-        </div>
-        {keyRecoveryOpen && (
-          <div style={{ marginTop: 12, padding: "10px 12px", background: `${T.clay}10`,
-            border: `1px solid ${T.clay}44`, borderRadius: 7 }}>
-            <div style={{ font: `600 11px/1.4 ${mono}`, color: T.clay }}>Backend gap: no regenerate endpoint is exposed in the current frontend API surface.</div>
-            <div style={{ font: `400 11px/1.45 ${sans}`, color: T.muted, marginTop: 5 }}>
-              This is confirmatory guidance only until the platform API provides a revoke-and-mint operation. It does not store or fabricate secrets client-side.
-            </div>
-          </div>
-        )}
-      </Panel>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         {/* create tenant form */}
         <Panel style={{ padding: 18 }}>
           <Eyebrow>create tenant</Eyebrow>
@@ -945,7 +1022,7 @@ function Admin() {
                 <option value="paid">paid</option>
               </select>
             </div>
-            {err && <ErrorBanner error={err} />}
+            {err && <div style={{ font: `500 11px/1 ${mono}`, color: T.clay }}>{err}</div>}
             <Btn kind="primary" disabled={creating}>{creating ? "Creating…" : "Create tenant"}</Btn>
           </form>
         </Panel>
@@ -954,10 +1031,7 @@ function Admin() {
         <Panel style={{ padding: 18 }}>
           <Eyebrow><Webhook size={11} style={{ verticalAlign: "-1px" }} /> &nbsp;webhooks</Eyebrow>
           <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-            {hooks.length === 0 && <EmptyState
-              title="No webhooks registered"
-              body="Register an endpoint to receive signed run.done and run.failed events from agent runs."
-              action="Use a stable HTTPS URL before relying on delivery in production." />}
+            {hooks.length === 0 && <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>No webhooks registered.</div>}
             {hooks.map(h => (
               <div key={h.id} style={{ background: T.panel2, border: `1px solid ${T.line2}`,
                 borderRadius: 7, padding: "10px 12px" }}>
@@ -991,7 +1065,7 @@ function Admin() {
                     padding: "8px 10px", font: `400 12px/1 ${sans}`, boxSizing: "border-box" }} />
               </div>
             ))}
-            {hookErr && <ErrorBanner error={hookErr} />}
+            {hookErr && <div style={{ font: `500 11px/1 ${mono}`, color: T.clay }}>{hookErr}</div>}
             <Btn kind="ghost">Register webhook</Btn>
           </form>
         </Panel>
@@ -1012,14 +1086,16 @@ export default function PlatformConsole({ onLoginRequest }) {
   const [concept, setConcept] = useState("A shy turtle learns to share with forest friends");
   const [idx, setIdx] = useState(STAGES.length);   // start "complete"
   const [running, setRunning] = useState(false);
-  const [studioProjectId, setStudioProjectId] = useState(null);
+  const [studioProjectId, setStudioProjectId] = useState(
+    () => localStorage.getItem('studio_active_project') || null
+  );
   const [routing, setRouting] = useState({});
-  const [reviewMode, setReviewMode] = useState(false);
-  const [reviewPending, setReviewPending] = useState(false);
-  const [freeOnly, setFreeOnly] = useState(true);
   const qc = useQueryClient();
   const { isLoggedIn, logout, user } = useAuth();
   const isAdmin = user?.role === "admin";
+
+  const [reviewMode, setReviewMode] = useState(false);
+  const [reviewPending, setReviewPending] = useState(false);
 
   const { data: providersData } = useQuery({ queryKey: ['providers'], queryFn: modelsApi.getProviders, staleTime: 60_000 });
   const { data: routingConfig } = useQuery({ queryKey: ['routing-config'], queryFn: modelsApi.getConfig, staleTime: 30_000 });
@@ -1071,6 +1147,7 @@ export default function PlatformConsole({ onLoginRequest }) {
   const livePending = runsData?.items ? runsData.items.filter(r => r.status === 'awaiting_approval').length : null;
   const liveRuns = runsData?.items || [];
 
+  const [freeOnly, setFreeOnly] = useState(true);
   const [approvals, setApprovals] = useState([
     { id: 1, to: "dana@solarbright.com", subject: "Quick question, Dana",
       body: "Hi Dana, I came across SolarBright and thought our work might be relevant. Open to a quick chat? Reply STOP and I won't follow up.", status: "pending" },
@@ -1104,11 +1181,11 @@ export default function PlatformConsole({ onLoginRequest }) {
     setReviewPending(false);
     try {
       const { id } = await studioApiCalls.createProject(concept, genre, reviewMode);
+      localStorage.setItem('studio_active_project', id);
       setStudioProjectId(id);
       await studioApiCalls.runProject(id, { background: true });
     } catch (e) {
       setRunning(false);
-      throw e;
     }
   }
 
@@ -1119,7 +1196,6 @@ export default function PlatformConsole({ onLoginRequest }) {
       await studioApiCalls.runProject(studioProjectId, { background: true });
     } catch (e) {
       setRunning(false);
-      throw e;
     }
   }
 
@@ -1127,7 +1203,14 @@ export default function PlatformConsole({ onLoginRequest }) {
     setRunning(false);
     setReviewPending(false);
     setIdx(0);
+    localStorage.removeItem('studio_active_project');
     setStudioProjectId(null);
+  }
+
+  function trackProject(id) {
+    localStorage.setItem('studio_active_project', id);
+    setStudioProjectId(id);
+    setView('studio');
   }
 
   async function approveStage(stageName, note = '') {
@@ -1139,7 +1222,6 @@ export default function PlatformConsole({ onLoginRequest }) {
       qc.invalidateQueries(['studio-project', studioProjectId]);
     } catch (e) {
       setRunning(false);
-      throw e;
     }
   }
 
@@ -1152,7 +1234,6 @@ export default function PlatformConsole({ onLoginRequest }) {
       qc.invalidateQueries(['studio-project', studioProjectId]);
     } catch (e) {
       setRunning(false);
-      throw e;
     }
   }
 
@@ -1201,27 +1282,23 @@ export default function PlatformConsole({ onLoginRequest }) {
             </button>
           </div>
           {navOpen && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 4, marginTop: 10, overflowX: "auto", paddingBottom: 4 }}>
               {allNavItems.map(([k, Ic, label]) => (
                 <button key={k} onClick={() => { setView(k); setNavOpen(false); }} style={{
-                  display: "flex", alignItems: "center", gap: 7, padding: "10px 11px",
-                  borderRadius: 7, border: `1px solid ${view === k ? T.line2 : T.line}`, cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 7, padding: "8px 12px",
+                  borderRadius: 7, border: "none", cursor: "pointer", flexShrink: 0,
                   background: view === k ? T.raised : "transparent",
                   color: view === k ? T.paper : T.muted,
-                  font: `600 12px/1 ${sans}`, minHeight: 38, justifyContent: "flex-start" }}>
+                  font: `600 12px/1 ${sans}` }}>
                   <Ic size={14} /> {label}
                   {k === "leads" && pending > 0 && <span style={{ font: `700 9px/1 ${mono}`,
-                    color: T.ink, background: T.clay, borderRadius: 99, padding: "2px 6px", marginLeft: "auto" }}>{pending}</span>}
+                    color: T.ink, background: T.clay, borderRadius: 99, padding: "2px 6px" }}>{pending}</span>}
                 </button>
               ))}
-              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "space-between",
-                borderTop: `1px solid ${T.line}`, paddingTop: 8, marginTop: 2 }}>
-                <div style={{ font: `600 10px/1 ${mono}`, letterSpacing: ".1em", color: onair ? T.amber : T.faint }}>
-                  {onair ? "ON AIR" : "IDLE"}
-                </div>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", padding: "0 4px" }}>
                 {isLoggedIn
-                  ? <button onClick={logout} style={{ background: 'none', border: `1px solid ${T.line}`, color: T.faint, padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>LOGOUT</button>
-                  : <button onClick={onLoginRequest} style={{ background: T.amber, border: 'none', color: T.ink, padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700, whiteSpace: 'nowrap' }}>SIGN IN</button>
+                  ? <button onClick={logout} style={{ background: 'none', border: `1px solid #3C3227`, color: '#7D715E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>LOGOUT</button>
+                  : <button onClick={onLoginRequest} style={{ background: '#E8A33D', border: 'none', color: '#14110E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700, whiteSpace: 'nowrap' }}>SIGN IN</button>
                 }
               </div>
             </div>
@@ -1249,8 +1326,8 @@ export default function PlatformConsole({ onLoginRequest }) {
             gateway · agents · video · audio · leads</div>
           <div style={{ padding: "8px 8px 4px" }}>
             {isLoggedIn
-              ? <button onClick={logout} style={{ background: 'none', border: `1px solid ${T.line}`, color: T.faint, padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em' }}>LOGOUT</button>
-              : <button onClick={onLoginRequest} style={{ background: T.amber, border: 'none', color: T.ink, padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700 }}>SIGN IN</button>
+              ? <button onClick={logout} style={{ background: 'none', border: `1px solid #3C3227`, color: '#7D715E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em' }}>LOGOUT</button>
+              : <button onClick={onLoginRequest} style={{ background: '#E8A33D', border: 'none', color: '#14110E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700 }}>SIGN IN</button>
             }
           </div>
         </nav>
@@ -1305,6 +1382,7 @@ export default function PlatformConsole({ onLoginRequest }) {
               activeProject={activeProject}
               onApproveStage={approveStage}
               onRejectStage={rejectStage}
+              onTrack={trackProject}
               isMobile={isMobile}
             />
           )}
