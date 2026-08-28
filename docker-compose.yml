@@ -88,6 +88,7 @@ services:
       FAL_KEY: ${FAL_KEY:-}
       # Wan 2.2 GPU worker (Modal or RunPod)
       WAN_BACKEND: ${WAN_BACKEND:-}
+      WAN_INFERENCE_STEPS: ${WAN_INFERENCE_STEPS:-}
       MODAL_ENDPOINT_URL: ${MODAL_ENDPOINT_URL:-}
       MODAL_TOKEN_ID: ${MODAL_TOKEN_ID:-}
       MODAL_TOKEN_SECRET: ${MODAL_TOKEN_SECRET:-}

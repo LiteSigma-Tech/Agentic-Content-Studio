@@ -678,22 +678,30 @@ class WanVideoProvider:
 
     # ── shared payload builder ────────────────────────────────────────────────
     def _payload(self, prompt: str, seconds: float, init_image) -> dict:
-        import base64
+        import base64, re
         duration = 5 if seconds <= 6 else 8
-        # Wan renders floating text overlays (captions, bold on-screen titles)
-        # poorly — blurry and misspelled. The render stage handles those separately.
-        # We suppress overlay-style text but allow natural scene text (laptop
-        # screens, whiteboards, documents) which is part of the visual composition.
+        # Strip on-screen text instructions that Wan cannot render legibly:
+        # "POV: ...", "On-Screen Text: ...", "(Bold): ...", etc. These come from
+        # social-media-style scripts and belong in the render/graphics layer.
+        clean = re.sub(
+            r'(?i)(pov\s*:|on.?screen\s+text\s*[:\(]?|caption\s*:|'
+            r'bold\s+text\s*:|title\s+card\s*:)[^.]*\.?', '', prompt)
+        clean = re.sub(r'\s{2,}', ' ', clean).strip()
+
+        # Suppress overlay text; allow scene text (screens, docs) to be
+        # approximate — focus on composition and motion.
         no_text_suffix = (
             ". No floating text overlays, no bold caption cards, "
             "no subtitle bars, no watermarks, no large on-screen titles. "
-            "Any screen or document content should appear natural and in context."
+            "Any screens, documents or interfaces visible in the scene should "
+            "appear realistic but text on them need not be legible — "
+            "focus on composition, lighting and motion over text readability."
         )
         p: dict = {
-            "prompt": prompt + no_text_suffix,
+            "prompt": clean + no_text_suffix,
             "duration": duration,
             "resolution": "720p",
-            "num_inference_steps": 50,
+            "num_inference_steps": int(os.environ.get("WAN_INFERENCE_STEPS") or 30),
         }
         if init_image and Path(init_image).exists():
             p["init_image_b64"] = base64.b64encode(

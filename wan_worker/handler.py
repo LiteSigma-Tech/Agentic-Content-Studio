@@ -42,6 +42,10 @@ import runpod
 import torch
 from PIL import Image
 
+# Enable TF32 on Blackwell/Ampere+ GPUs — same numerical quality for video
+# generation but faster matmul throughput at no cost.
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 # ── Model path ───────────────────────────────────────────────────────────────
 # Default: baked into image at /app/models (full-baked Docker target)
@@ -129,7 +133,8 @@ def handler(job: dict) -> dict:
     init_b64        = inp.get("init_image_b64")
     duration        = int(inp.get("duration", 5))
     resolution      = inp.get("resolution", "720p")
-    steps           = int(inp.get("num_inference_steps", 50))
+    _default_steps  = int(os.environ.get("WAN_INFERENCE_STEPS") or 30)
+    steps           = int(inp.get("num_inference_steps", _default_steps))
 
     width, height = _resolution_to_dims(resolution)
 

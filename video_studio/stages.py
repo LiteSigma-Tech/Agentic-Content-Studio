@@ -364,23 +364,60 @@ def generate_keyframes(project: Project, ctx: StageContext) -> tuple[str, float]
 
 
 def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     tpl = template_for(project.genre)
     cost, model = 0.0, ""
+
+    # Parallelism matches the RunPod max-workers setting (default 2).
+    # Shots that already have a clip_uri are skipped (resume support).
+    _PARALLEL = int(__import__("os").environ.get("CLIP_PARALLEL", "2"))
+
+    char_desc = {ch.name: ch.description for ch in project.characters if ch.description}
+
+    pending = []
     for sh in project.all_shots():
         if sh.clip_uri:
             continue
-        base = f"{sh.description}. Style: {project.style_prompt}"
+        # Inline character physical descriptions so the video model can match
+        # the designed appearance — same pattern as generate_keyframes.
+        if sh.characters:
+            char_details = ", ".join(
+                f"{n} ({char_desc[n]})" if n in char_desc else n
+                for n in sh.characters)
+        else:
+            char_details = ""
+        base = sh.description
+        if char_details:
+            base += f". Characters present: {char_details}"
+        base += f". Style: {project.style_prompt}"
         override = project.prompt_overrides.get("generate_clips", "")
         if override:
             base += f". Reviewer direction: {override}"
         enriched = _enrich_prompt(ctx, base, "video")
         sh.clip_prompt = enriched
+        pending.append(sh)
+
+    def _generate_one(sh):
         res = ctx.gw.video(
-            "default", enriched,
+            "default", sh.clip_prompt,
             seconds=sh.seconds, init_image=sh.keyframe_uri,
             required_caps=tpl.required_caps)
-        sh.clip_uri, model, cost = res.uri, res.model_used, cost + res.cost_usd
-        ctx.store.save(project)   # checkpoint after each shot so restarts resume here
+        return sh, res
+
+    with ThreadPoolExecutor(max_workers=_PARALLEL) as pool:
+        futures = {pool.submit(_generate_one, sh): sh for sh in pending}
+        for fut in as_completed(futures):
+            sh = futures[fut]
+            try:
+                sh, res = fut.result()
+                sh.clip_uri, model = res.uri, res.model_used
+                cost += res.cost_usd
+            except Exception as e:
+                # Log failure but continue — failed clip stays None so a retry
+                # run will pick it up, and the checkpoint below records progress.
+                print(f"[generate_clips] shot {sh.id} failed: {e}")
+            ctx.store.save(project)   # checkpoint after each shot completes
+
     return model or "n/a", cost
 
 
