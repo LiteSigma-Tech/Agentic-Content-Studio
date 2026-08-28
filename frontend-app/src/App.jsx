@@ -19,7 +19,7 @@ import Showcase from './pages/Showcase'
 import Terms from './pages/Terms'
 import Trust from './pages/Trust'
 import OutOfTokens from "./app/OutOfTokens";
-import OnboardingWizard from "./app/onboarding/OnboardingWizard";
+import OnboardingWizard, { isOnboardingDismissed } from "./app/onboarding/OnboardingWizard";
 
 // Dashboard
 import Overview from "./app/dashboard/Overview";
@@ -57,6 +57,36 @@ import Admin from "./app/settings/Admin";
 // Help
 import HelpSupport from "./app/help/HelpSupport";
 
+function RequireAuth({ children }) {
+  const { isLoggedIn, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 12,
+          color: "#A6987F",
+          background: "#14110E",
+        }}
+      >
+        LOADING...
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function RequireAdmin({ children }) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -87,10 +117,33 @@ export default function App() {
     <ErrorBoundary>
       <ScrollToHash />
       <Routes>
-        <Route path="/login" element={<Login onSuccess={() => navigate("/dashboard")} />} />
+        <Route
+          path="/login"
+          element={
+            <Login
+              onSuccess={(user) => {
+                navigate(isOnboardingDismissed(user?.id) ? "/dashboard" : "/welcome");
+              }}
+            />
+          }
+        />
         <Route path="/" element={<LandingPage onLoginRequest={openLogin} />} />
-        <Route path="/welcome" element={<OnboardingWizard />} />
-        <Route path="/console" element={<PlatformConsole onLoginRequest={openLogin} />} />
+        <Route
+          path="/welcome"
+          element={
+            <RequireAuth>
+              <OnboardingWizard />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/console"
+          element={
+            <RequireAuth>
+              <PlatformConsole onLoginRequest={openLogin} />
+            </RequireAuth>
+          }
+        />
 
         {/* Marketing pages */}
             <Route path="/pricing" element={<Pricing onLoginRequest={openLogin} />} />
@@ -103,8 +156,15 @@ export default function App() {
             <Route path="/faq" element={<Faq onLoginRequest={openLogin} />} />
             <Route path="/changelog" element={<Changelog onLoginRequest={openLogin} />} />
             <Route path="/about" element={<About onLoginRequest={openLogin} />} />
-        {/* App shell layout with nested routes */}
-        <Route element={<AppShell onLoginRequest={openLogin} />}>
+
+        {/* App shell layout with nested routes — auth required */}
+        <Route
+          element={
+            <RequireAuth>
+              <AppShell onLoginRequest={openLogin} />
+            </RequireAuth>
+          }
+        >
           {/* Dashboard */}
           <Route path="/dashboard" element={<Overview onNavigate={navigate} />} />
 

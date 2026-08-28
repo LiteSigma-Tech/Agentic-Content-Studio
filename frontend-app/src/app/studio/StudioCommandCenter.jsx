@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import NumberFlow from "@number-flow/react";
 import {
@@ -34,13 +35,23 @@ import {
   sans,
 } from "../shared/ui";
 import { STAGES, SignalChain, StageReviewBanner } from "../shared/pipeline";
+import { ACTIVE_PROJECT_KEY } from "../library/AllEpisodes";
 
 const GENRES = ["kids_cartoon", "brand_explainer", "drama", "comedy"];
 
 export default function StudioCommandCenter() {
   const qc = useQueryClient();
   const reduceMotion = useReducedMotion();
-  const [selectedId, setSelectedId] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Which project to inspect on load, in priority order: an explicit
+  // ?project= (set by the Library's "Track" button), then whatever was
+  // last tracked in localStorage (so a hard refresh doesn't lose it,
+  // same as PlatformConsole.jsx's studioProjectId), then nothing — the
+  // auto-select-first-project effect below covers that case.
+  const [selectedId, setSelectedId] = useState(
+    () => searchParams.get("project") || localStorage.getItem(ACTIVE_PROJECT_KEY) || ""
+  );
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [concept, setConcept] = useState("");
   const [genre, setGenre] = useState("kids_cartoon");
@@ -61,11 +72,34 @@ export default function StudioCommandCenter() {
   const projects = projectsData?.items || [];
 
   // Auto-select the first project on initial load if none is selected
+  // (nothing came in via ?project= or localStorage)
   useEffect(() => {
     if (!selectedId && projects.length > 0) {
       setSelectedId(projects[0].id);
     }
   }, [projects, selectedId]);
+
+  // Keep localStorage in sync with whatever project is currently selected —
+  // covers the Track handoff, manual row clicks, and newly-created
+  // projects alike, and survives a page reload the same way
+  // PlatformConsole.jsx's studioProjectId did.
+  useEffect(() => {
+    if (selectedId) {
+      localStorage.setItem(ACTIVE_PROJECT_KEY, selectedId);
+    } else {
+      localStorage.removeItem(ACTIVE_PROJECT_KEY);
+    }
+  }, [selectedId]);
+
+  // Once the incoming ?project= id has been consumed into state, drop it
+  // from the address bar so it doesn't override the next manual selection
+  // on a later render.
+  useEffect(() => {
+    if (searchParams.get("project")) {
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Selected project detail fetch
   // Automatically switches to fast polling (2s) if the project is actively running

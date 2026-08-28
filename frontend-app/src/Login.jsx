@@ -12,28 +12,8 @@ import {
   Sparkles,
 } from 'lucide-react'
 
-/* ═══════════════════════════════════════════════════════════════
-   Login — Agentic Content Studio
-   Restyled onto the landing page's dark theme design system:
-   monochrome bg/fg/accent CSS custom properties (App.css / :root),
-   the shared .auth-shell / .auth-card / .field-input / .btn / etc.
-   components (App.css), and the same display/body/mono font stack
-   and brand mark as landing/Layout.jsx's nav — instead of the
-   separate warm-charcoal/amber console token set (app/shared/ui),
-   which is the authenticated-console theme, not this page's.
-
-   Interaction states (hover, focus, disabled) are handled in CSS
-   via App.css's existing :hover/:focus-visible/:disabled rules on
-   .btn and .field-input, rather than JS-tracked hover/focus state,
-   matching how landing.css drives its own interactivity.
-
-   Reacts to [data-theme] automatically via CSS vars — no theme
-   logic needed here (see ThemeContext.jsx, mounted at app root).
-   ═══════════════════════════════════════════════════════════════ */
 
 export default function Login({ onSuccess }) {
-  const PROTOTYPE_NO_AUTH = true
-  // PROTOTYPE ONLY — bypasses real login. Set to false / remove before any real deployment.
 
   const { login } = useAuth()
   const [mode, setMode] = useState('signin')
@@ -51,30 +31,23 @@ export default function Login({ onSuccess }) {
     }
   }, [error])
 
-  const submit = useCallback(
-    async (e) => {
-      e.preventDefault()
-      setLoading(true)
-      setError('')
+const submit = useCallback(
+  async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
 
-      if (PROTOTYPE_NO_AUTH) {
-        await login(email, password)
-        onSuccess?.()
-        setLoading(false)
-        return
-      }
-
-      try {
-        await login(email, password)
-        onSuccess?.()
-      } catch (err) {
-        setError(err.response?.data?.detail || 'Login failed. Check your credentials.')
-      } finally {
-        setLoading(false)
-      }
-    },
-    [email, password, login, onSuccess]
-  )
+    try {
+      const me = await login(email, password)
+      onSuccess?.(me)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Login failed. Check your credentials.')
+    } finally {
+      setLoading(false)
+    }
+  },
+  [email, password, login, onSuccess]
+)
 
   const switchMode = useCallback((next) => {
     setMode(next)

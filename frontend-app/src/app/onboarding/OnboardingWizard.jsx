@@ -1,33 +1,16 @@
-// app/onboarding/OnboardingWizard.jsx
-//
-// Phase 4 - first-time / zero-projects welcome flow, per the redesign plan.
-// Lives at a dedicated route (/welcome). Shown automatically on first visit
-// when the tenant has zero projects; after that it's opt-in only, reachable
-// from Help/Support so it never blocks anyone who already has real work.
-//
-// Since real auth stays off (PROTOTYPE_NO_AUTH), zero-projects is tested by
-// pointing studioApiCalls at a tenant/mock with no projects rather than
-// creating a real new account -- this component doesn't care how that
-// state was produced, it only reads { items } from listProjects() the same
-// way Overview.jsx and NewEpisode.jsx already do.
-//
-// Dismissal persistence: localStorage flag ("onboarding_dismissed"). This
-// is real app code running in the browser, not a Claude artifact sandbox,
-// so localStorage is the normal, correct tool here -- same category of
-// state as ThemeContext's own persistence choices elsewhere in this app.
-// Finishing OR skipping both set the flag; only the redirect gate (in the
-// file that wires this in) reads it to decide whether to auto-route here.
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Sparkles, GitBranch, Film, X } from "lucide-react";
 import { T, mono, sans, Panel, Btn, Eyebrow } from "../shared/ui";
+import { useAuth } from "../../AuthContext";
 
-const STORAGE_KEY = "onboarding_dismissed";
+const STORAGE_KEY_PREFIX = "onboarding_dismissed:";
 
-export function markOnboardingDismissed() {
+export function markOnboardingDismissed(userId) {
+  if (!userId) return;
   try {
-    localStorage.setItem(STORAGE_KEY, "true");
+    localStorage.setItem(STORAGE_KEY_PREFIX + userId, "true");
   } catch {
     // localStorage unavailable (private mode, etc) -- non-fatal, the
     // wizard just becomes reachable-every-time via /welcome instead of
@@ -35,9 +18,10 @@ export function markOnboardingDismissed() {
   }
 }
 
-export function isOnboardingDismissed() {
+export function isOnboardingDismissed(userId) {
+  if (!userId) return false;
   try {
-    return localStorage.getItem(STORAGE_KEY) === "true";
+    return localStorage.getItem(STORAGE_KEY_PREFIX + userId) === "true";
   } catch {
     return false;
   }
@@ -69,13 +53,14 @@ const STEPS = [
 
 export default function OnboardingWizard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [stepIdx, setStepIdx] = useState(0);
   const step = STEPS[stepIdx];
   const isLast = stepIdx === STEPS.length - 1;
   const StepIcon = step.icon;
 
   function handleSkip() {
-    markOnboardingDismissed();
+    markOnboardingDismissed(user?.id);
     navigate("/dashboard");
   }
 
@@ -84,8 +69,8 @@ export default function OnboardingWizard() {
       setStepIdx((i) => i + 1);
       return;
     }
-    markOnboardingDismissed();
-    navigate("/studio-plus");
+    markOnboardingDismissed(user?.id);
+    navigate("/studio");
   }
 
   return (
