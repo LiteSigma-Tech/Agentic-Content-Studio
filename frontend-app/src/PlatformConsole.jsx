@@ -1108,7 +1108,7 @@ export default function PlatformConsole({ onLoginRequest }) {
     queryKey: ['studio-project', studioProjectId],
     queryFn: () => studioApiCalls.getProject(studioProjectId),
     enabled: !!studioProjectId,
-    refetchInterval: (running || reviewPending) ? 2000 : false,
+    refetchInterval: (running || reviewPending) ? 2000 : (studioProjectId ? 5000 : false),
   });
 
   // Sync stage index from live project data

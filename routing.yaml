@@ -49,7 +49,7 @@ routing:
       #   replicate/seedance — ~$0.15/clip, solid fallback
       #   minimax/hailuo-02  — ~$0.24/clip
       #   mock/video         — Ken Burns from keyframe, always free
-      default: "runpod/wan-2.2"
+      default: "wan/runpod"
       fallbacks:
         - "google/veo-2"
         - "replicate/seedance-1-lite"

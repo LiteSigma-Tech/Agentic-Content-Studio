@@ -11,3 +11,4 @@ imageio-ffmpeg>=0.5.1
 numpy>=1.26.0
 safetensors>=0.4.0
 sentencepiece>=0.2.0
+ftfy>=6.0.0

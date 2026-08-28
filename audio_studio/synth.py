@@ -20,6 +20,19 @@ def has_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 
 
+def _audio_duration(path: str) -> float:
+    """Return duration of an audio file in seconds using ffprobe."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=10
+        )
+        return float(r.stdout.strip())
+    except Exception:
+        return 0.0
+
+
 def is_real_audio(path: str | None) -> bool:
     if not path or not Path(path).exists():
         return False
@@ -136,23 +149,28 @@ def mix_master(music: str, dialogue: list[tuple[float, str]], total_s: float,
         f"duration=longest,apad,volume={n:.1f}[dlg]"
     )
 
-    # Music bed at 35% so conversation is clearly dominant
-    parts.append("[0]volume=0.35[mbed]")
+    # Music bed at 12% — background only, never fights dialogue
+    parts.append("[0]volume=0.12[mbed]")
 
-    # Final mix: music + dialogue.  volume=2 compensates for amix's ÷2.
-    parts.append("[mbed][dlg]amix=inputs=2:normalize=0,volume=2[mix]")
+    # Final mix: amix averages the two signals (÷2 naturally prevents clipping),
+    # then loudnorm brings to -16 LUFS with -1.5 dBTP ceiling — broadcast safe.
+    parts.append(
+        "[mbed][dlg]amix=inputs=2:normalize=0,"
+        "loudnorm=I=-16:TP=-1.5:LRA=11[mix]"
+    )
 
     filt = ";".join(parts)
     try:
         _ff([*inputs, "-filter_complex", filt, "-map", "[mix]",
              "-t", f"{total_s:.2f}", "-ac", "2", "-ar", str(_SR), str(dst)])
     except subprocess.CalledProcessError:
-        # Fallback: merge music + dialogue with explicit gains
+        # Fallback
         fb = ";".join([
-            *parts[:n],                                          # adelay lines
+            *parts[:n],
             f"{''.join(labels)}amix=inputs={n}:normalize=0,volume={n:.1f}[dlg]",
-            "[0]volume=0.35[mbed]",
-            "[mbed][dlg]amix=inputs=2:normalize=0,volume=2[mix]",
+            "[0]volume=0.12[mbed]",
+            "[mbed][dlg]amix=inputs=2:normalize=0,"
+            "loudnorm=I=-16:TP=-1.5:LRA=11[mix]",
         ])
         _ff([*inputs, "-filter_complex", fb, "-map", "[mix]",
              "-t", f"{total_s:.2f}", "-ac", "2", "-ar", str(_SR), str(dst)])

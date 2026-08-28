@@ -139,7 +139,12 @@ def mix_audio(project: Project, ctx: StageContext) -> tuple[str, float]:
     for sh in project.all_shots():
         if sh.dialogue_audio_uri:
             dialogue.append((t, sh.dialogue_audio_uri))
-        t += sh.seconds
+            # Advance by the longer of planned clip duration vs actual dialogue
+            # length — prevents next clip's dialogue starting before this one ends.
+            actual = synth._audio_duration(sh.dialogue_audio_uri)
+            t += max(sh.seconds, actual)
+        else:
+            t += sh.seconds
     total = t or 5.0
     dst = _audio_dir(ctx) / "master.wav"
     synth.mix_master(project.music_uri, dialogue, total, dst)

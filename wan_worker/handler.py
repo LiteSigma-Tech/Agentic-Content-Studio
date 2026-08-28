@@ -57,41 +57,35 @@ def _load_pipeline():
     if _pipe is not None:
         return _pipe
 
-    print(f"[wan] Model dir: {MODEL_DIR}")
+    MODEL_ID = "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+    HF_TOKEN = os.environ.get("HF_TOKEN")
+    local_dir = MODEL_DIR / "model_files"
 
-    # If model not present (slim/network-volume image), download on first run.
-    if not (MODEL_DIR / "model_index.json").exists():
-        print("[wan] Model weights not found — downloading to volume (first run only)...")
-        from huggingface_hub import snapshot_download
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        snapshot_download(
-            "Wan-AI/Wan2.2-TI2V-5B",
-            local_dir=str(MODEL_DIR),
-            ignore_patterns=["*.md", "*.txt", "*.gitattributes"],
-        )
-        print("[wan] Download complete.")
+    print(f"[wan] Model dir: {local_dir}")
+    local_dir.mkdir(parents=True, exist_ok=True)
 
-    print("[wan] Loading Wan 2.2 TI2V-5B pipeline...")
+    # Download native Wan model files if not already present.
+    # Wan-AI/Wan2.2-TI2V-5B is NOT in diffusers pipeline format — it has no
+    # model_index.json — so we can't use from_pretrained() on the repo directly.
+    # We download the raw files then construct the pipeline component by component.
+    print(f"[wan] Loading {MODEL_ID}...")
     t0 = time.time()
 
-    from diffusers import WanImageToVideoPipeline, WanPipeline
+    from diffusers import WanImageToVideoPipeline
     from diffusers.utils import export_to_video
 
-    # TI2V (image-conditioned) pipeline
-    try:
-        _pipe = WanImageToVideoPipeline.from_pretrained(
-            str(MODEL_DIR),
-            dtype=torch.bfloat16,
-        )
-    except Exception:
-        # Fallback to text-only if TI2V variant unavailable
-        _pipe = WanPipeline.from_pretrained(
-            str(MODEL_DIR),
-            dtype=torch.bfloat16,
-        )
+    # Wan-AI/Wan2.2-TI2V-5B-Diffusers is the official diffusers-format repo
+    # with model_index.json and all component subfolders — loads cleanly.
+    _pipe = WanImageToVideoPipeline.from_pretrained(
+        MODEL_ID,
+        cache_dir=str(MODEL_DIR),
+        torch_dtype=torch.bfloat16,
+        token=HF_TOKEN,
+    )
 
-    _pipe.enable_model_cpu_offload()   # keeps VRAM usage lean on 3090/4090
-    _pipe.enable_vae_slicing()
+    _pipe.enable_model_cpu_offload()
+    _pipe.vae.enable_slicing()
+    _pipe.vae.enable_tiling()
 
     print(f"[wan] Pipeline ready in {time.time() - t0:.1f}s")
     return _pipe
@@ -160,10 +154,14 @@ def handler(job: dict) -> dict:
             num_inference_steps=steps,
             guidance_scale=5.0,
         )
+        # WanImageToVideoPipeline always requires an image argument.
+        # Use the provided keyframe if available, otherwise a black frame.
         if init_b64:
             image = _decode_image(init_b64)
             image = image.resize((width, height))
-            kwargs["image"] = image
+        else:
+            image = Image.new("RGB", (width, height), color=(0, 0, 0))
+        kwargs["image"] = image
 
         output = pipe(**kwargs)
 

@@ -603,15 +603,21 @@ class RunPodComfyUIImageProvider:
                     status = d.get("status", "")
                     if status == "COMPLETED":
                         out = d.get("output", {})
-                        if out.get("status") != "success":
+                        # Handle both response formats:
+                        #   {"images": [{"data": "<b64>"}]}  ← RunPod ComfyUI worker
+                        #   {"status": "success", "message": "<data:...;base64,b64>"}
+                        b64 = None
+                        if isinstance(out, dict):
+                            images = out.get("images", [])
+                            if images and isinstance(images[0], dict):
+                                b64 = images[0].get("data", "")
+                            if not b64:
+                                msg = out.get("message", "")
+                                if msg:
+                                    b64 = msg.split(",", 1)[-1]
+                        if not b64:
                             raise ProviderError(
-                                f"RunPod ComfyUI job error: {out}")
-                        msg = out.get("message", "")
-                        if not msg:
-                            raise ProviderError(
-                                "RunPod ComfyUI: empty output message")
-                        # Strip "data:image/png;base64," prefix
-                        b64 = msg.split(",", 1)[-1]
+                                f"RunPod ComfyUI: no image data in output: {str(out)[:200]}")
                         uri = _stub_file(".png", base64.b64decode(b64))
                         return MediaAsset(uri=uri, mime="image/png",
                                           model_id=self.model_id,
@@ -674,8 +680,17 @@ class WanVideoProvider:
     def _payload(self, prompt: str, seconds: float, init_image) -> dict:
         import base64
         duration = 5 if seconds <= 6 else 8
+        # Wan renders floating text overlays (captions, bold on-screen titles)
+        # poorly — blurry and misspelled. The render stage handles those separately.
+        # We suppress overlay-style text but allow natural scene text (laptop
+        # screens, whiteboards, documents) which is part of the visual composition.
+        no_text_suffix = (
+            ". No floating text overlays, no bold caption cards, "
+            "no subtitle bars, no watermarks, no large on-screen titles. "
+            "Any screen or document content should appear natural and in context."
+        )
         p: dict = {
-            "prompt": prompt,
+            "prompt": prompt + no_text_suffix,
             "duration": duration,
             "resolution": "720p",
             "num_inference_steps": 50,
@@ -731,8 +746,8 @@ class WanVideoProvider:
                 raise ProviderError("Wan/RunPod: no job ID returned")
 
         # Poll with fresh per-request connections — no stale connection issues.
-        # 10 min deadline covers cold start (~2-3 min) + inference (~2-3 min).
-        deadline = time.time() + 600
+        # 20 min deadline: pipeline load (~2 min) + inference (~8-9 min) + VAE decode (~1 min).
+        deadline = time.time() + 1200
         poll = f"{self._RUNPOD_API}/{self._runpod_ep}/status/{job_id}"
         while time.time() < deadline:
             time.sleep(10)

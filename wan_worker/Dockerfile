@@ -24,25 +24,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # torch is already in the base image — requirements.txt excludes it
 # --timeout 120 prevents failures on slow connections for large packages
 COPY requirements.txt .
-RUN pip install --no-cache-dir --timeout 120 -r requirements.txt
+RUN python -m pip install --no-cache-dir --timeout 120 -r requirements.txt
 
 # Worker code
 COPY handler.py .
 
 # ── Validate: run this target to confirm imports + handler structure work ──
 # docker build --target deps-only -t wan-test wan_worker/
-# docker run --rm wan-test python3 -c "import handler; print('OK')"
+# docker run --rm wan-test python -c "import handler; print('OK')"
 
 # ── Full image option A: bake model weights (~10GB, ~20GB total image) ───────
 # Fastest cold start (~30s), largest image, slowest first push.
 FROM deps-only AS full-baked
 
-RUN python3 -c "\
+RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
+    python -c "\
 from huggingface_hub import snapshot_download; \
 snapshot_download( \
     'Wan-AI/Wan2.2-TI2V-5B', \
     local_dir='/app/models/Wan2.2-TI2V-5B', \
-    ignore_patterns=['*.md', '*.txt', '*.gitattributes'] \
+    ignore_patterns=['*.md', '*.txt', '*.gitattributes'], \
+    max_workers=4 \
 )"
 
 CMD ["python", "-u", "handler.py"]
