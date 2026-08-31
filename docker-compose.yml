@@ -212,6 +212,9 @@ services:
     environment:
       PLATFORM_SIGNING_KEY: ${PLATFORM_SIGNING_KEY:-dev-only-change-me}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:-}
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@admin.com}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
+      DEFAULT_TENANT_NAME: ${DEFAULT_TENANT_NAME:-Default}
       DATABASE_URL: postgresql://agentic:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/agentic
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     ports: ["127.0.0.1:8005:8000"]

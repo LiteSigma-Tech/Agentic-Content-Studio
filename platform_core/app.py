@@ -86,6 +86,35 @@ async def _startup():
         configure_logging()
     except Exception:
         pass
+    await _bootstrap_default_admin()
+
+
+async def _bootstrap_default_admin():
+    """Create a default admin tenant+user if the database has no users at all."""
+    email = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@admin.com")
+    password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin123")
+    tenant_name = os.environ.get("DEFAULT_TENANT_NAME", "Default")
+
+    # Try DB first; fall back to in-memory if DB is unavailable
+    try:
+        from shared.database import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM users")
+            if count > 0:
+                return
+    except Exception:
+        if platform.store.users:
+            return
+
+    # No users found — seed the default admin
+    try:
+        t = await platform.store.acreate_tenant(tenant_name, plan="free")
+        await platform.store.acreate_user(t.id, email, password, role="admin")
+        platform.log.emit("bootstrap_admin_created", email=email, tenant_id=t.id)
+        print(f"[platform] Bootstrap admin created — email: {email}  password: {password}", flush=True)
+    except Exception as exc:
+        print(f"[platform] Bootstrap admin creation failed: {exc}", flush=True)
 
 
 # --- dependency factory: auth -> rate limit -> tenant ctx -> permission ------

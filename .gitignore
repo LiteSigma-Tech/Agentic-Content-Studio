@@ -45,3 +45,7 @@ frontend-app/.vite/
 
 # Docker
 *.Zone.Identifier
+
+
+
+.start-all.ps1 

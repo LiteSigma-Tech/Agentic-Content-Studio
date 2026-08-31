@@ -1,24 +1,23 @@
 import { useState } from 'react'
 import { useAuth } from './AuthContext'
+import { T, mono, sans } from './app/shared/ui'
 
-const T = { ink: '#14110E', panel: '#211C17', panel2: '#2A231B', paper: '#ECE4D6', amber: '#E8A33D', teal: '#62B69E', clay: '#D2694B', muted: '#A6987F', faint: '#7D715E', line: '#3C3227' }
-const mono = 'ui-monospace, SFMono-Regular, Menlo, monospace'
-const sans = 'Inter, system-ui, -apple-system, Segoe UI, sans-serif'
 
 export default function Login({ onSuccess }) {
+
   const { login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const submit = async e => {
+  const submit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      await login(email, password)
-      onSuccess?.()
+      const me = await login(email, password)
+      onSuccess?.(me)
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed. Check your credentials.')
     } finally {

@@ -102,9 +102,26 @@ Copy `.env.example` to `.env` and set these before starting in production:
 | `REDIS_PASSWORD` | Optional Redis auth — omit for dev, set in prod | `openssl rand -hex 24` |
 | `CORS_ORIGINS` | Comma-separated allowed frontend origins | your production domain |
 
-### Bootstrap the first tenant
+### Default admin account
 
-Once the stack is up, create your first tenant with the bootstrap token:
+On first boot, if the database has no users, the platform automatically creates
+an admin account:
+
+| Field | Default | Override via |
+|---|---|---|
+| Email | `admin@admin.com` | `DEFAULT_ADMIN_EMAIL` in `.env` |
+| Password | `admin123` | `DEFAULT_ADMIN_PASSWORD` in `.env` |
+| Tenant | `Default` | `DEFAULT_TENANT_NAME` in `.env` |
+
+**Change these in production.** Set the env vars in `.env` before the first
+`docker compose up`, or log in and update the password from the Admin tab.
+
+The bootstrap is idempotent — it only runs when the `users` table is empty and
+is skipped on every subsequent restart.
+
+### Bootstrap additional tenants
+
+To create extra tenants programmatically, use the bootstrap token:
 
 ```bash
 curl -X POST http://localhost:8005/admin/tenants \
@@ -114,8 +131,8 @@ curl -X POST http://localhost:8005/admin/tenants \
 ```
 
 The response includes a one-time API key. After that, use `POST /v1/login` for
-regular JWT-based auth. Additional tenants can be created from the Admin tab in
-the console (admin role only).
+regular JWT-based auth. Additional tenants can also be created from the Admin
+tab in the console (admin role only).
 
 ## The packages
 
