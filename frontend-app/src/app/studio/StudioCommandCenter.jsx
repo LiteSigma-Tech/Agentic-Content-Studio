@@ -38,7 +38,18 @@ import { STAGES, SignalChain, StageReviewBanner } from "../shared/pipeline";
 import { ACTIVE_PROJECT_KEY } from "../library/AllEpisodes";
 import { useTheme } from "../../ThemeContext";
 
-const GENRES = ["kids_cartoon", "brand_explainer", "drama", "comedy"];
+const GENRES = [
+  "kids_cartoon",
+  "brand_explainer",
+  "drama",
+  "comedy",
+  "educational_explainer",
+  "horror_thriller",
+  "sci_fi_fantasy",
+  "documentary",
+  "action_adventure",
+  "marketing_ad"
+];
 
 export default function StudioCommandCenter() {
   // Subscribes this component to theme changes directly
