@@ -41,10 +41,7 @@ import { useTheme } from "../../ThemeContext";
 const GENRES = ["kids_cartoon", "brand_explainer", "drama", "comedy"];
 
 export default function StudioCommandCenter() {
-  // Subscribes this component to theme changes directly -- without this,
-  // toggling dark/light mode doesn't re-render plain elements below that
-  // read T.* colors inline (Panel/Eyebrow/Btn already do this internally,
-  // but this component's own raw elements need it too).
+  // Subscribes this component to theme changes directly
   useTheme();
 
   const qc = useQueryClient();
@@ -53,11 +50,7 @@ export default function StudioCommandCenter() {
   const inspectorRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Which project to inspect on load, in priority order: an explicit
-  // ?project= (set by the Library's "Track" button), then whatever was
-  // last tracked in localStorage (so a hard refresh doesn't lose it,
-  // same as PlatformConsole.jsx's studioProjectId), then nothing — the
-  // auto-select-first-project effect below covers that case.
+  // Which project to inspect on load, in priority order: ?project=, then localStorage, then auto-select first project
   const [selectedId, setSelectedId] = useState(
     () => searchParams.get("project") || localStorage.getItem(ACTIVE_PROJECT_KEY) || ""
   );
@@ -71,6 +64,13 @@ export default function StudioCommandCenter() {
   const [resumingId, setResumingId] = useState(null);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
 
+  // Centralized scrolling helper with timing buffer to allow React layout updates to commit [2]
+  const scrollToInspector = (delay = 80) => {
+    setTimeout(() => {
+      inspectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, delay);
+  };
+
   // Top level projects list
   const { data: projectsData, error: listError } = useQuery({
     queryKey: ["studio-command-center-projects"],
@@ -81,17 +81,13 @@ export default function StudioCommandCenter() {
   const projects = projectsData?.items || [];
 
   // Auto-select the first project on initial load if none is selected
-  // (nothing came in via ?project= or localStorage)
   useEffect(() => {
     if (!selectedId && projects.length > 0) {
       setSelectedId(projects[0].id);
     }
   }, [projects, selectedId]);
 
-  // Keep localStorage in sync with whatever project is currently selected —
-  // covers the Track handoff, manual row clicks, and newly-created
-  // projects alike, and survives a page reload the same way
-  // PlatformConsole.jsx's studioProjectId did.
+  // Keep localStorage in sync with whatever project is currently selected
   useEffect(() => {
     if (selectedId) {
       localStorage.setItem(ACTIVE_PROJECT_KEY, selectedId);
@@ -100,9 +96,7 @@ export default function StudioCommandCenter() {
     }
   }, [selectedId]);
 
-  // Once the incoming ?project= id has been consumed into state, drop it
-  // from the address bar so it doesn't override the next manual selection
-  // on a later render.
+  // Once the incoming ?project= id has been consumed into state, drop it from searchParams
   useEffect(() => {
     if (searchParams.get("project")) {
       setSearchParams({}, { replace: true });
@@ -111,7 +105,6 @@ export default function StudioCommandCenter() {
   }, []);
 
   // Selected project detail fetch
-  // Automatically switches to fast polling (2s) if the project is actively running
   const { data: project, error: detailError, isFetching } = useQuery({
     queryKey: ["studio-command-center-project", selectedId],
     queryFn: () => studioApiCalls.getProject(selectedId),
@@ -157,7 +150,6 @@ export default function StudioCommandCenter() {
     },
     onSuccess: (_, deletedId) => {
       qc.invalidateQueries(["studio-command-center-projects"]);
-      // Clear selection if the currently inspected project was the one deleted
       if (selectedId === deletedId) {
         setSelectedId("");
       }
@@ -208,7 +200,7 @@ export default function StudioCommandCenter() {
       setConcept("");
       setShowCreateForm(false);
       setSelectedId(id);
-      inspectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToInspector(120); // slightly longer timing delay for new templates to render [2]
       qc.invalidateQueries(["studio-command-center-projects"]);
     } catch (e) {
       setCreateError(errorGuidance(e, "Episode did not start."));
@@ -221,10 +213,12 @@ export default function StudioCommandCenter() {
   async function handleResume(id) {
     setActionError(null);
     setResumingId(id);
+    setSelectedId(id); // auto-select the project we are resuming
     try {
       await studioApiCalls.runProject(id, { background: true });
       qc.invalidateQueries(["studio-command-center-projects"]);
       qc.invalidateQueries(["studio-command-center-project", id]);
+      scrollToInspector(80);
     } catch (e) {
       setActionError(errorGuidance(e, "Pipeline did not resume."));
     } finally {
@@ -480,7 +474,11 @@ export default function StudioCommandCenter() {
                     <button
                       title="Approve & continue"
                       aria-label="Approve & continue"
-                      onClick={() => approve.mutate({ id: p.id, stage: stage.name })}
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        approve.mutate({ id: p.id, stage: stage.name });
+                        scrollToInspector(80);
+                      }}
                       disabled={approve.isPending}
                       style={{
                         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
@@ -494,7 +492,11 @@ export default function StudioCommandCenter() {
                     <button
                       title="Reject"
                       aria-label="Reject"
-                      onClick={() => reject.mutate({ id: p.id, stage: stage.name })}
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        reject.mutate({ id: p.id, stage: stage.name });
+                        scrollToInspector(80);
+                      }}
                       disabled={reject.isPending}
                       style={{
                         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
@@ -510,7 +512,7 @@ export default function StudioCommandCenter() {
                       aria-label="Inspect pipeline"
                       onClick={() => {
                         setSelectedId(p.id);
-                        inspectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        scrollToInspector(80);
                       }}
                       style={{
                         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
@@ -539,7 +541,10 @@ export default function StudioCommandCenter() {
             <span style={{ font: `500 12px/1 ${sans}`, color: T.faint }}>Selected:</span>
             <select
               value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
+              onChange={(e) => {
+                setSelectedId(e.target.value);
+                scrollToInspector(80);
+              }}
               style={{
                 padding: "8px 12px",
                 borderRadius: T.radiusMd,
@@ -589,8 +594,8 @@ export default function StudioCommandCenter() {
               <StageReviewBanner
                 project={project}
                 stageName={awaitingStageName}
-                onApprove={(stage, note) => handleApproveStage(project.id, stage, note)}
-                onReject={(stage, promptOverride, note) => handleRejectStage(project.id, stage, promptOverride, note)}
+                onApprove={(stage, note) => approve.mutate({ id: project.id, stage, note })}
+                onReject={(stage, promptOverride, note) => reject.mutate({ id: project.id, stage, promptOverride, note })}
                 disabled={approve.isPending || reject.isPending}
               />
             )}
@@ -833,7 +838,10 @@ export default function StudioCommandCenter() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95, height: 0, overflow: "hidden" }}
                       transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                      onClick={() => setSelectedId(p.id)}
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        scrollToInspector(80);
+                      }}
                       className="workspace-row"
                       style={{
                         display: "flex",
@@ -868,7 +876,7 @@ export default function StudioCommandCenter() {
                         {hasFail && (
                           <button
                             onClick={(e) => {
-                              e.stopPropagation(); // Avoid triggering inspector selection
+                              e.stopPropagation(); // Avoid row selection interaction conflict
                               handleResume(p.id);
                             }}
                             disabled={resumingId === p.id}

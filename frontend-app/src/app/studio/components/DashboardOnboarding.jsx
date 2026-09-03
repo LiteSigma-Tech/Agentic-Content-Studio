@@ -1,3 +1,4 @@
+/* DashoardOnboarding.jsx */
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import { ArrowRight, CheckCircle2, X } from "lucide-react";
