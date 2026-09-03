@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Sparkles, GitBranch, Film, X } from "lucide-react";
 import { T, mono, sans, Panel, Btn, Eyebrow } from "../shared/ui";
@@ -12,9 +11,7 @@ export function markOnboardingDismissed(userId) {
   try {
     localStorage.setItem(STORAGE_KEY_PREFIX + userId, "true");
   } catch {
-    // localStorage unavailable (private mode, etc) -- non-fatal, the
-    // wizard just becomes reachable-every-time via /welcome instead of
-    // auto-redirect-once. Not worth surfacing an error for.
+    // localStorage unavailable (private mode, etc) -- non-fatal
   }
 }
 
@@ -40,7 +37,7 @@ const STEPS = [
     icon: GitBranch,
     eyebrow: "how it works",
     title: "11 stages, one signal chain",
-    body: "Script, voice casting, shot list, and final mix all run in sequence with live status. Turn on review mode and the pipeline pauses after each stage so you can check the work before it continues -- or leave it off and let it run end to end.",
+    body: "Script, voice casting, shot list, and final mix all run in sequence with live status. Turn on review mode and the pipeline pauses after each stage so you can check the work before it continues, or leave it off and let it run to completion.",
   },
   {
     id: "cta",
@@ -58,6 +55,13 @@ export default function OnboardingWizard() {
   const step = STEPS[stepIdx];
   const isLast = stepIdx === STEPS.length - 1;
   const StepIcon = step.icon;
+
+  // Intercept on load to prevent running again if already completed
+  useEffect(() => {
+    if (user?.id && isOnboardingDismissed(user.id)) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
 
   function handleSkip() {
     markOnboardingDismissed(user?.id);
@@ -128,7 +132,7 @@ export default function OnboardingWizard() {
             {step.body}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", justify_content: "space-between", marginTop: 28 }}>
             <div style={{ display: "flex", gap: 6 }}>
               {STEPS.map((s, i) => (
                 <span
