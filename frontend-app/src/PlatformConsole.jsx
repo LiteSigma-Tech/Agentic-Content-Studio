@@ -14,7 +14,7 @@ const T = {
   ink: "#14110E", panel: "#211C17", panel2: "#2A231B", raised: "#322920",
   line: "#3C3227", line2: "#4A3E30",
   paper: "#ECE4D6", muted: "#A6987F", faint: "#7D715E",
-  amber: "#E8A33D", teal: "#62B69E", clay: "#D2694B", violet: "#9C8BD0",
+  amber: " #a78bfa", teal: "#62B69E", clay: "#D2694B", violet: "#9C8BD0",
 };
 const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const sans = "Inter, system-ui, -apple-system, Segoe UI, sans-serif";
@@ -1298,7 +1298,7 @@ export default function PlatformConsole({ onLoginRequest }) {
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", padding: "0 4px" }}>
                 {isLoggedIn
                   ? <button onClick={logout} style={{ background: 'none', border: `1px solid #3C3227`, color: '#7D715E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>LOGOUT</button>
-                  : <button onClick={onLoginRequest} style={{ background: '#E8A33D', border: 'none', color: '#14110E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700, whiteSpace: 'nowrap' }}>SIGN IN</button>
+                  : <button onClick={onLoginRequest} style={{ background: ' #a78bfa', border: 'none', color: '#14110E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700, whiteSpace: 'nowrap' }}>SIGN IN</button>
                 }
               </div>
             </div>
@@ -1327,7 +1327,7 @@ export default function PlatformConsole({ onLoginRequest }) {
           <div style={{ padding: "8px 8px 4px" }}>
             {isLoggedIn
               ? <button onClick={logout} style={{ background: 'none', border: `1px solid #3C3227`, color: '#7D715E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em' }}>LOGOUT</button>
-              : <button onClick={onLoginRequest} style={{ background: '#E8A33D', border: 'none', color: '#14110E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700 }}>SIGN IN</button>
+              : <button onClick={onLoginRequest} style={{ background: ' #a78bfa', border: 'none', color: '#14110E', padding: '3px 10px', borderRadius: 3, cursor: 'pointer', fontSize: 10, fontFamily: mono, letterSpacing: '0.04em', fontWeight: 700 }}>SIGN IN</button>
             }
           </div>
         </nav>

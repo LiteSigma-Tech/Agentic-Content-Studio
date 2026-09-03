@@ -41,6 +41,7 @@ export default function Layout({
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+   const logoSrc = theme === 'dark' ? '/studio_logo_darkmode.webp' : '/studio_logo_lightmode.webp'
   const themeLabel = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
   const menuId = useMemo(() => 'landing-mobile-nav', [])
 
@@ -61,11 +62,8 @@ export default function Layout({
     <div className={`landing-page ${className}`.trim()} data-theme={theme} data-surface='ink' data-palette='violet' data-text-preset='warm'>
       <nav className='landing-nav' aria-label='Marketing navigation'>
         <Link className='landing-brand' to='/'>
-          <span className='landing-brand__mark' aria-hidden='true'>
-            <Clapperboard size={16} aria-hidden='true' />
-          </span>
-          <span>Agentic Content Studio</span>
-        </Link>
+            <img src={logoSrc} alt='Agentic Content Studio' className='landing-brand__logo' />
+          </Link>
         <button
           className='landing-nav__menu'
           type='button'

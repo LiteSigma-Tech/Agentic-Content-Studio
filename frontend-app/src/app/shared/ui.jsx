@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTheme } from "../../ThemeContext";
 import PropTypes from "prop-types";
 import { AlertTriangle, Copy, Check, Info } from "lucide-react";
@@ -14,7 +14,7 @@ export const DARK_TOKENS = {
   paper: "#f5f0e8",
   muted: "#8e95a5",
   faint: "#565c6e",
-  amber: "#E8A33D",
+  amber: " #a78bfa",
   teal: "#62B69E",
   clay: "#D2694B",
   violet: "#a78bfa",
@@ -38,7 +38,7 @@ export const LIGHT_TOKENS = {
   paper: "#0d0b14",
   muted: "#2c263b",
   faint: "#3d354d",
-  amber: "#A85D00",
+  amber: "#a78bfa",
   teal: "#0E7A5A",
   clay: "#B23B1E",
   violet: "#8b5cf6",
@@ -86,6 +86,36 @@ export const SC = new Proxy({}, {
 
 export const mono = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 export const sans = "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif";
+
+/* ═══════════════════════════════════════════════════════════════
+   Responsive breakpoints
+   Generic, app-agnostic viewport helper — no router/auth deps,
+   safe for any component that needs mobile/tablet/desktop layout.
+   mobile  : < 640
+   tablet  : 640-1023
+   desktop : >= 1024
+   ═══════════════════════════════════════════════════════════════ */
+
+export const BP_TABLET = 640;
+export const BP_DESKTOP = 1024;
+
+export function getBreakpoint(width) {
+  if (width < BP_TABLET) return "mobile";
+  if (width < BP_DESKTOP) return "tablet";
+  return "desktop";
+}
+
+export function useBreakpoint() {
+  const [bp, setBp] = useState(() =>
+    typeof window === "undefined" ? "desktop" : getBreakpoint(window.innerWidth)
+  );
+  useEffect(() => {
+    const onResize = () => setBp(getBreakpoint(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return bp;
+}
 
 export function Eyebrow({ children, color = T.faint, style }) {
   useTheme();

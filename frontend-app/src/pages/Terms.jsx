@@ -17,18 +17,18 @@ export default function Terms({ onLoginRequest }) {
       </section>
       <section className="page-section page-section--mb section-reveal">
         <div className="page-doc">
-          <p className="page-doc__updated">Last updated   August 2026</p>
+          <p className="page-doc__updated">Last updated: August 2026</p>
           <h2>Accounts and tenants</h2>
           <p>
-            Tenants are admin-provisioned; there is no public self-signup. Whoever creates a tenant
-            is responsible for the operators and admins they grant access to within it, and for the
-            outreach sent under that tenant&#39;s name.
+            Tenants are provisioned by us on your behalf; there is no public self-signup. Once a
+            tenant is provisioned, its designated admin is responsible for the operators and admins
+            they grant access to within it, and for the outreach sent under that tenant&#39;s name.
           </p>
           <h2>Cost caps and usage</h2>
           <p>
             Every tenant has an explicit cost cap and job cap, tracked by the tenant&#39;s main admin
             rather than per individual user. Free-only routing keeps spend at $0.00 until an admin
-            opts in to paid provider fallback   the cap is enforced at the routing layer, not
+            opts in to paid provider fallback; the cap is enforced at the routing layer, not
             advisory.
           </p>
           <h2>Outreach and compliance</h2>

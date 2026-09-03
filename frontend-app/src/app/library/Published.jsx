@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { studioApiCalls } from "../../api";
 import { Panel, Btn, EmptyState, PageHeader, ErrorBanner, errorGuidance, T, sans } from "../shared/ui";
-import { EpisodeRow, deriveStatus } from "./AllEpisodes";
+import { EpisodeRow, EpisodeGridCard, ViewToggle, useViewMode, deriveStatus } from "./AllEpisodes";
 
 // "Published" = done / has a final render — same field checks
 // (final_av_uri / final_uri / status "done") ProjectsGallery already uses,
@@ -11,6 +11,7 @@ import { EpisodeRow, deriveStatus } from "./AllEpisodes";
 // PlatformConsole.jsx's ProjectsGallery does.
 export default function Published() {
   const [playing, setPlaying] = useState(null);
+  const [viewMode, setViewMode] = useViewMode();
   const { data, isLoading, error } = useQuery({
     queryKey: ["library-all-projects"],
     queryFn: () => studioApiCalls.listProjects(50, 0),
@@ -21,7 +22,11 @@ export default function Published() {
 
   return (
     <div>
-      <PageHeader title="Published" description="Finished episodes with a completed render, ready to watch." />
+      <PageHeader
+        title="Published"
+        description="Finished episodes with a completed render, ready to watch."
+        action={<ViewToggle mode={viewMode} onChange={setViewMode} />}
+      />
       {error && <div style={{ marginBottom: 14 }}><ErrorBanner error={errorGuidance(error, "Could not load episodes.")} /></div>}
       {isLoading && <div style={{ font: `400 12px/1.4 ${sans}`, color: T.faint }}>Loading…</div>}
       {!isLoading && projects.length === 0 && !error && (
@@ -42,7 +47,7 @@ export default function Published() {
         </div>
       )}
 
-      {projects.length > 0 && (
+      {projects.length > 0 && viewMode === "list" && (
         <Panel style={{ padding: 16 }}>
           {projects.map((p) => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -51,6 +56,17 @@ export default function Published() {
             </div>
           ))}
         </Panel>
+      )}
+      {projects.length > 0 && viewMode === "grid" && (
+        <div
+          role="list"
+          aria-label="Grid of published episodes"
+          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}
+        >
+          {projects.map((p) => (
+            <EpisodeGridCard key={p.id} p={p} onWatch={setPlaying} />
+          ))}
+        </div>
       )}
     </div>
   );

@@ -10,7 +10,7 @@ const T = {
   ink: "#14110E", panel: "#211C17", panel2: "#2A231B", raised: "#322920",
   line: "#3C3227", line2: "#4A3E30",
   paper: "#ECE4D6", muted: "#A6987F", faint: "#7D715E",
-  amber: "#E8A33D", teal: "#62B69E", clay: "#D2694B", violet: "#9C8BD0",
+  amber: " #a78bfa", teal: "#62B69E", clay: "#D2694B", violet: "#9C8BD0",
 };
 const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
 const sans = "Inter, system-ui, -apple-system, Segoe UI, sans-serif";

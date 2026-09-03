@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import NumberFlow from "@number-flow/react";
 import {
@@ -36,12 +36,21 @@ import {
 } from "../shared/ui";
 import { STAGES, SignalChain, StageReviewBanner } from "../shared/pipeline";
 import { ACTIVE_PROJECT_KEY } from "../library/AllEpisodes";
+import { useTheme } from "../../ThemeContext";
 
 const GENRES = ["kids_cartoon", "brand_explainer", "drama", "comedy"];
 
 export default function StudioCommandCenter() {
+  // Subscribes this component to theme changes directly -- without this,
+  // toggling dark/light mode doesn't re-render plain elements below that
+  // read T.* colors inline (Panel/Eyebrow/Btn already do this internally,
+  // but this component's own raw elements need it too).
+  useTheme();
+
   const qc = useQueryClient();
   const reduceMotion = useReducedMotion();
+  const navigate = useNavigate();
+  const inspectorRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Which project to inspect on load, in priority order: an explicit
@@ -199,6 +208,7 @@ export default function StudioCommandCenter() {
       setConcept("");
       setShowCreateForm(false);
       setSelectedId(id);
+      inspectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       qc.invalidateQueries(["studio-command-center-projects"]);
     } catch (e) {
       setCreateError(errorGuidance(e, "Episode did not start."));
@@ -382,13 +392,15 @@ export default function StudioCommandCenter() {
                           height: 18,
                           borderRadius: 99,
                           padding: 2,
-                          background: reviewMode ? `${T.hitl}55` : T.line2,
+                          background: reviewMode ? `${T.hitl}55` : `${T.faint}33`,
+                          border: `1px solid ${reviewMode ? T.hitl : T.line2}`,
+                          boxSizing: "border-box",
                           transition: "all .2s",
                           display: "flex",
                           justifyContent: reviewMode ? "flex-end" : "flex-start",
                         }}
                       >
-                        <span style={{ width: 14, height: 14, borderRadius: 99, background: reviewMode ? T.hitl : T.faint }} />
+                        <span style={{ width: 14, height: 14, borderRadius: 99, background: reviewMode ? T.hitl : T.faint, boxShadow: "0 1px 2px rgba(0,0,0,0.3)" }} />
                       </span>
                     </button>
                   </div>
@@ -428,42 +440,86 @@ export default function StudioCommandCenter() {
 
       {/* Human Review Queue banner */}
       <section style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <CheckSquare color={T.hitl} size={16} />
-          <h3 style={{ font: `700 15px/1 ${sans}`, color: T.paper, margin: 0 }}>Needs your review</h3>
-          {awaiting.length > 0 && (
-            <span style={{ font: `500 11px/1 ${mono}`, color: T.hitl, background: `${T.hitl}22`, padding: "3px 8px", borderRadius: T.radiusMd }}>
-              <NumberFlow value={awaiting.length} /> pending
-            </span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <CheckSquare color={T.hitl} size={16} />
+            <h3 style={{ font: `700 15px/1 ${sans}`, color: T.paper, margin: 0 }}>Needs your review</h3>
+            {awaiting.length > 0 && (
+              <span style={{ font: `500 11px/1 ${mono}`, color: T.hitl, background: `${T.hitl}22`, padding: "3px 8px", borderRadius: T.radiusMd }}>
+                <NumberFlow value={awaiting.length} /> pending
+              </span>
+            )}
+          </div>
+          {awaiting.length > 4 && (
+            <Btn size="sm" kind="ghost" onClick={() => navigate("/activity-log")}>
+              See all {awaiting.length}
+              <ChevronRight size={13} />
+            </Btn>
           )}
         </div>
 
         {awaiting.length === 0 ? (
           <EmptyState title="Nothing waiting on review" body="All active pipelines are running smoothly." />
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {awaiting.map(({ project: p, stage }) => (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 12 }}>
+            {awaiting.slice(0, 4).map(({ project: p, stage }) => (
               <motion.div key={p.id} layout transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 25 }}>
-                <Panel style={{ padding: 16, borderLeft: `4px solid ${T.hitl}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                    <div>
-                      <div style={{ font: `700 14px/1.3 ${sans}`, color: T.paper }}>{p.title || p.id}</div>
-                      <div style={{ font: `500 11px/1 ${mono}`, color: T.faint, marginTop: 4 }}>
-                        paused stage: <span style={{ color: T.hitl, fontWeight: 700 }}>{stage.name.replace(/_/g, " ")}</span>
+                <Panel style={{ padding: 14, borderLeft: `3px solid ${T.hitl}`, height: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ font: `700 13px/1.3 ${sans}`, color: T.paper, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.title || p.id}
+                      </div>
+                      <div style={{ font: `500 10px/1.4 ${mono}`, color: T.faint, marginTop: 4 }}>
+                        stopped at: <span style={{ color: T.hitl, fontWeight: 700 }}>{stage.name.replace(/_/g, " ")}</span>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <Pill status="awaiting_review" label="Awaiting review" />
-                      <Btn size="xs" onClick={() => setSelectedId(p.id)}>Inspect Pipeline</Btn>
-                    </div>
+                    <Pill status="awaiting_review" label="Review" />
                   </div>
-                  <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-                    <Btn kind="ok" icon={Check} onClick={() => approve.mutate({ id: p.id, stage: stage.name })} disabled={approve.isPending}>
-                      {approve.isPending ? "Approving…" : "Approve & continue"}
-                    </Btn>
-                    <Btn kind="danger" icon={X} onClick={() => reject.mutate({ id: p.id, stage: stage.name })} disabled={reject.isPending}>
-                      {reject.isPending ? "Rejecting…" : "Reject"}
-                    </Btn>
+                  <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
+                    <button
+                      title="Approve & continue"
+                      aria-label="Approve & continue"
+                      onClick={() => approve.mutate({ id: p.id, stage: stage.name })}
+                      disabled={approve.isPending}
+                      style={{
+                        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                        background: `${T.teal}1A`, color: T.teal, border: `1px solid ${T.teal}55`,
+                        borderRadius: 6, padding: "7px 0", cursor: approve.isPending ? "not-allowed" : "pointer",
+                        opacity: approve.isPending ? 0.6 : 1,
+                      }}
+                    >
+                      <Check size={14} />
+                    </button>
+                    <button
+                      title="Reject"
+                      aria-label="Reject"
+                      onClick={() => reject.mutate({ id: p.id, stage: stage.name })}
+                      disabled={reject.isPending}
+                      style={{
+                        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                        background: `${T.clay}1A`, color: T.clay, border: `1px solid ${T.clay}55`,
+                        borderRadius: 6, padding: "7px 0", cursor: reject.isPending ? "not-allowed" : "pointer",
+                        opacity: reject.isPending ? 0.6 : 1,
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                    <button
+                      title="Inspect pipeline"
+                      aria-label="Inspect pipeline"
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        inspectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      style={{
+                        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "transparent", color: T.muted, border: `1px solid ${T.line2}`,
+                        borderRadius: 6, padding: "7px 0", cursor: "pointer",
+                      }}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
                   </div>
                 </Panel>
               </motion.div>
@@ -473,7 +529,7 @@ export default function StudioCommandCenter() {
       </section>
 
       {/* Episode Inspector (Signal Chain + Output View) */}
-      <section style={{ borderTop: `1px solid ${T.line}`, paddingTop: 20, marginBottom: 24 }}>
+      <section ref={inspectorRef} style={{ borderTop: `1px solid ${T.line}`, paddingTop: 20, marginBottom: 24 }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16 }}>
           <div>
             <Eyebrow color={T.amber}>Episode inspector</Eyebrow>

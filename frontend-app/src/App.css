@@ -1,42 +1,214 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* ═══════════════════════════════════════════════════════════════
+   APP.CSS — shared tokens + base styles + shared components
+   Single source of truth for color, typography, spacing, radius,
+   and shadow tokens used across the whole app (marketing, console,
+   Login, etc).
+
+   landing.css still layers its own palette/surface/text-preset
+   overrides on top of these, scoped to .landing-page, reusing the
+   SAME variable names on purpose — that's not a collision, it's
+   intentional: .landing-page's rules are more specific and win
+   there, so the marketing site's swappable theming is untouched.
+   Everywhere else now reads the same base values landing.css used
+   to hardcode locally (its default: dark / "void" surface / "slate"
+   accent / "warm" text).
+
+   Load order: index.css → App.css → landing.css.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Color */
+  --bg: #05060c;
+  --surface: #0b0d17;
+  --surface-2: #121523;
+  --surface-3: #1b1f30;
+  --border: #2a2f45;
+  --border-subtle: #171a26;
+  --fg: #f5f0e8;
+  --muted: #888888;
+  --accent: #a78bfa;
+  --accent-fg: #120b1a;
+  --accent-dim: #8b5cf6;
+  --danger: #ef4444;
+  --danger-fg: #ffffff;
+
+  /* Typography */
+  --font-display: "Avenir Next", "Futura", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+
+  /* Spacing */
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Shadow — copied verbatim from landing.css's default/light values */
+  --shadow: 0 24px 80px rgb(0 0 0 / 0.5);
+  --shadow-glow: 0 0 40px rgb(255 255 255 / 0.06);
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+/* THEMING GAP — closed. ThemeContext.jsx's ThemeProvider now sets
+   [data-theme] on document.documentElement (mounted at app root in
+   main.jsx, above AuthProvider/App), so this selector is reachable
+   app-wide, not just inside the marketing shell. Login, AppShell,
+   and every app/ page pick up light mode from this block the same
+   way landing.css's .landing-page-scoped rules do. */
+:root[data-theme="light"] {
+  --bg: #f6f7fb;
+  --surface: #ebedf5;
+  --surface-2: #dfe2ef;
+  --surface-3: #cfd3e5;
+  --border: #c3c8dc;
+  --border-subtle: #e6e8f2;
+  --fg: #2a2520;
+  --muted: #6b6b6b;
+  --accent: #8b5cf6;
+  --accent-fg: #ffffff;
+  --accent-dim: #7c3aed;
+  --shadow: 0 24px 80px rgb(0 0 0 / 0.08);
+  --shadow-glow: 0 0 40px rgb(0 0 0 / 0.04);
 }
 
-.card {
-  padding: 2em;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-.read-the-docs {
-  color: #888;
+body {
+  font-family: var(--font-body);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SHARED COMPONENTS
+   Generalized from landing.css's button pattern (.landing-button).
+   .field-input, .field-label, .alert-error, .note-box, .auth-shell,
+   .auth-card, and .eyebrow are new — landing.css had no transferable
+   form/input styling (marketing pages have no forms), so these are
+   composed from the tokens above rather than lifted from an
+   existing rule.
+   ═══════════════════════════════════════════════════════════════ */
+
+.surface-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: 44px;
+  padding: 12px var(--space-lg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  font: 700 var(--text-sm)/1 var(--font-mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 200ms ease, box-shadow 200ms ease, opacity 200ms ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:disabled { cursor: not-allowed; opacity: 0.7; transform: none; }
+.btn--primary { background: var(--accent); color: var(--accent-fg); width: 100%; }
+.btn--secondary { background: var(--surface-2); color: var(--fg); border-color: var(--border); flex: 1; }
+.btn--secondary.is-active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+.field { margin-bottom: var(--space-md); }
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font: 600 var(--text-xs)/1 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.field-input {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font: var(--text-base) var(--font-body);
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.field-input.has-error { border-color: var(--danger); }
+.field-input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.alert-error {
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: var(--space-md);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.note-box {
+  margin-top: var(--space-md);
+  padding: var(--space-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: var(--space-xl); }
+.eyebrow__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.eyebrow__text { color: var(--accent); font: 700 var(--text-sm)/1 var(--font-mono); letter-spacing: 0.08em; }
+
+.tab-row { display: flex; gap: var(--space-xs); margin-bottom: var(--space-md); }
+
+.form-title { color: var(--fg); font-size: var(--text-lg); font-weight: 700; margin-bottom: 4px; }
+.form-subtitle { color: var(--muted); font-size: var(--text-sm); margin-bottom: var(--space-lg); }
+
+.note-box__label { color: var(--muted); font-size: var(--text-xs); font-family: var(--font-mono); }
+.note-box__text { color: var(--muted); font-size: var(--text-xs); margin-top: 4px; }
+
+.auth-shell {
+  background: var(--bg);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.auth-card {
+  width: 360px;
+  max-width: 92vw;
+  padding: var(--space-xl);
 }
