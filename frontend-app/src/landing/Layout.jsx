@@ -62,7 +62,7 @@ export default function Layout({
     <div className={`landing-page ${className}`.trim()} data-theme={theme} data-surface='ink' data-palette='violet' data-text-preset='warm'>
       <nav className='landing-nav' aria-label='Marketing navigation'>
         <Link className='landing-brand' to='/'>
-            <img src={logoSrc} alt='Agentic Content Studio' className='landing-brand__logo' />
+            <img src={logoSrc} alt='Xeliai  Studio' className='landing-brand__logo' />
           </Link>
         <button
           className='landing-nav__menu'
@@ -101,12 +101,9 @@ export default function Layout({
       <footer className='landing-footer'>
         <div className='landing-footer__container'>
           <div className='landing-footer__brand-col'>
-            <Link className='landing-brand' to='/'>
-              <span className='landing-brand__mark' aria-hidden='true'>
-                <Clapperboard size={18} aria-hidden='true' />
-              </span>
-              <span>Agentic Content Studio</span>
-            </Link>
+             <Link className='landing-brand' to='/'>
+            <img src={logoSrc} alt='Xeliai  Studio' className='landing-brand__logo' />
+          </Link>
             <p className='landing-footer__tagline'>
               Empowering creation with intelligent agent workflows.
             </p>
@@ -129,7 +126,7 @@ export default function Layout({
         </div>
 
         <div className='landing-footer__bottom'>
-          <span>Agentic Content Studio &copy; 2026. All rights reserved.</span>
+          <span>Xeliai  Studio &copy; 2026. All rights reserved.</span>
           <a href='#top' onClick={scrollToTop} className='landing-footer__back-to-top'>
             Back to top <ChevronUp size={14} aria-hidden='true' />
           </a>

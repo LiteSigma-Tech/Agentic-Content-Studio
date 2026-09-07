@@ -1,7 +1,8 @@
+
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   ArrowRight, Check, CircleDollarSign, Clapperboard, Play, ShieldCheck, Sparkles, Waypoints,
-  Zap, Lock, Users, Radio, Activity, BarChart3, Layers, Cpu, Globe, X as XIcon
+  Zap, Lock, Users, Radio, Activity, BarChart3, Layers, Cpu, Globe,Mic, X as XIcon
 } from 'lucide-react'
 import Layout from './Layout'
 import './landing.css'
@@ -19,7 +20,7 @@ const pillars = [
     icon: Sparkles,
     title: 'Studio',
     stat: '11 stages',
-    body: 'Concept to rendered episode. Script, storyboard, characters, keyframes, clips, voices, music, mix   with human review gates at every critical decision.',
+    body: 'Concept to rendered episode. Script, storyboard, characters, keyframes, clips, voices, music, mix with human review gates at every critical decision.',
     image: 'Script-to-storyboard preview',
     features: ['AI script generation', 'Auto storyboarding', 'Voice casting', 'Music scoring']
   },
@@ -27,7 +28,7 @@ const pillars = [
     icon: Waypoints,
     title: 'Leads',
     stat: 'HITL sends',
-    body: 'Source, score, and approve outreach that actually lands. Compliance checks run before every send   not after the fact.',
+    body: 'Source, score, and approve outreach that actually lands. Compliance checks run before every send not after the fact.',
     image: 'Outreach queue preview',
     features: ['ICP scoring', 'Consent validation', 'Suppression checks', 'Approval gates']
   },
@@ -49,14 +50,14 @@ const steps = [
 ]
 
 const filmstrip = [
-  'Episode thumbnail   cold open',
-  'Episode thumbnail   product demo',
-  'Episode thumbnail   explainer',
-  'Episode thumbnail   highlight reel',
-  'Episode thumbnail   testimonial cut',
-  'Episode thumbnail   season recap',
-  'Episode thumbnail   behind the scenes',
-  'Episode thumbnail   trailer',
+  'Episode thumbnail cold open',
+  'Episode thumbnail product demo',
+  'Episode thumbnail explainer',
+  'Episode thumbnail highlight reel',
+  'Episode thumbnail testimonial cut',
+  'Episode thumbnail season recap',
+  'Episode thumbnail behind the scenes',
+  'Episode thumbnail trailer',
 ]
 
 const stats = [
@@ -259,7 +260,7 @@ function HeroFrame() {
         </div>
         <span className="hero-frame__title">
           <Radio size={12} className="hero-frame__live-icon" aria-hidden="true" />
-          Studio   Episode 014
+          Studio Episode 014
         </span>
         <span className="hero-frame__badge">LIVE</span>
       </div>
@@ -282,6 +283,34 @@ function HeroFrame() {
   )
 }
 
+/* ─── Fallback Frame for missing or broken assets ─── */
+function FilmstripFrame({ label, i }) {
+  const [imgFailed, setImgFailed] = useState(false)
+  return (
+    <div className="reel__frame" style={{ '--i': i }}>
+      <div className="reel__frame-inner">
+        {!imgFailed ? (
+          <img
+            src="/placeholder.jpg"
+            onError={() => setImgFailed(true)}
+            alt={label}
+            className="reel__frame-img"
+          />
+        ) : null}
+        {imgFailed && (
+          <div className="reel__frame-placeholder">
+            <Clapperboard size={20} className="reel__frame-icon" />
+            <span>{label}</span>
+          </div>
+        )}
+        <div className="reel__frame-overlay">
+          <Play size={20} fill="currentColor" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ─── Infinite marquee filmstrip ─── */
 function FilmstripReel() {
   const trackRef = useRef(null)
@@ -299,16 +328,7 @@ function FilmstripReel() {
       </div>
       <div className={`reel__track ${isPaused ? 'is-paused' : ''}`} ref={trackRef}>
         {[...filmstrip, ...filmstrip].map((label, i) => (
-          <div className="reel__frame" key={`${label}-${i}`} style={{ '--i': i }}>
-            <div className="reel__frame-inner">
-  {/* Render the image as a direct child of the inner frame */}
-  <img src="/placeholder.jpg" alt={label} className="reel__frame-img" />
-  
-  <div className="reel__frame-overlay">
-    <Play size={20} fill="currentColor" />
-  </div>
-</div>
-          </div>
+          <FilmstripFrame label={label} i={i} key={`${label}-${i}`} />
         ))}
       </div>
       <div className="reel__perf reel__perf--bottom" aria-hidden="true">
@@ -318,7 +338,7 @@ function FilmstripReel() {
   )
 }
 
-/* ─── Stat bar ─── */
+/* ─── Stat bar [Redesigned to blend seamlessly without off-color borders] ─── */
 function StatBar() {
   return (
     <section className="stat-bar section-reveal" aria-label="Platform metrics">
@@ -417,6 +437,14 @@ export default function LandingPage({ onLoginRequest }) {
   const openLogin = () => onLoginRequest?.()
   const spotlight = useSpotlight()
 
+  // Real-time checkpoints simulator logs for the workflow card [2]
+  const checkpointLogs = [
+    { time: "01:14:02", task: "Scriptwriting initialization", result: "Checkpoint saved" },
+    { time: "01:14:18", task: "Keyframe asset generation", result: "Checkpoint saved" },
+    { time: "01:14:55", task: "Audio voiceover synthesis", result: "Checkpoint saved" },
+    { time: "01:15:20", task: "Final sound track mixing", result: "Database sync completed" }
+  ]
+
   return (
     <Layout onLoginRequest={onLoginRequest}>
       {/* ─── HERO ─── */}
@@ -428,9 +456,9 @@ export default function LandingPage({ onLoginRequest }) {
         />
         <div className="landing-hero__noise" aria-hidden="true" />
 
-        <div className="landing-hero__copy section-reveal">
+        <div className="landing-hero__copy copy-panel section-reveal">
           <div className="landing-kicker">
-            <span className="landing-kicker__badge">Agentic Content Studio</span>
+            <span className="landing-kicker__badge">Xeliai  Studio</span>
             <span className="landing-kicker__separator" aria-hidden="true" />
             <span className="landing-kicker__text">Creative studio for modern content teams</span>
           </div>
@@ -441,7 +469,7 @@ export default function LandingPage({ onLoginRequest }) {
           </h1>
           <p className="landing-hero__lead">
             A creative studio that takes your episode from concept to rendered video
-              offline, at zero cost, with humans in the loop for every decision that matters.
+            offline, at zero cost, with humans in the loop for every decision that matters.
             Lead generation built in, not bolted on.
           </p>
           <div className="landing-actions">
@@ -449,7 +477,7 @@ export default function LandingPage({ onLoginRequest }) {
             <MarketingButton kind="secondary" onClick={openLogin} icon={Play}>Watch demo</MarketingButton>
           </div>
           <div className="landing-hero__social-proof">
-                        <div className="social-avatars" aria-hidden="true">
+            <div className="social-avatars" aria-hidden="true">
               {[1,2,3,4].map((i) => (
                 <img key={i} src="/placeholder.jpg" alt="" className="social-avatar" />
               ))}
@@ -458,7 +486,7 @@ export default function LandingPage({ onLoginRequest }) {
           </div>
         </div>
 
-        <div className="landing-hero__visual section-reveal">
+        <div className="landing-hero__visual visual-panel section-reveal">
           <HeroFrame />
           <div className="hero-float-card hero-float-card--1" aria-hidden="true">
             <Cpu size={14} />
@@ -477,7 +505,7 @@ export default function LandingPage({ onLoginRequest }) {
       {/* ─── MARQUEE REEL ─── */}
       <FilmstripReel />
 
-      {/* ─── PROOF POINTS ─── */}
+      {/* ─── PROOF POINTS [Redesigned to blend seamlessly without off-color borders] ─── */}
       <section className="landing-logos section-reveal" id="proof" aria-label="Platform proof points">
         {[
           { label: 'Offline dev', desc: 'Zero GPU required' },
@@ -492,16 +520,26 @@ export default function LandingPage({ onLoginRequest }) {
         ))}
       </section>
 
-      {/* ─── BEFORE / AFTER ─── */}
+      {/* ─── BEFORE / AFTER [Redesigned to blend seamlessly without off-color borders] ─── */}
       <section className="landing-split section-reveal" id="split">
         <div className="split-panel split-panel--before">
           <div className="split-panel__badge split-panel__badge--warn">Without it</div>
           <h2>Teams stitch together a dozen tools, API keys, and fragile policies.</h2>
-          <p>Costs hit before proof. Model changes mean code changes. Compliance is a spreadsheet ritual that someone always forgets.</p>
+          <p>
+            Costs hit before proof of concept is established. Loose Python scripts, disconnected spreadsheets, 
+            scattered ElevenLabs keys, fragile ffmpeg prompt builders, and raw unmonitored API calls 
+            quickly drain your team budgets without a secure audit path or safety gate.
+          </p>
           <div className="split-panel__visual">
             <div className="chaos-grid" aria-hidden="true">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} className="chaos-cell" style={{ '--chaos-i': i }} />
+              {[
+                "ElevenLabs Key", "FFmpeg Prompts", "Google Sheets", "AdHoc Prompts",
+                "OpenAI Spend", "Webhook Config", "GDPR Verification", "Voice Casting",
+                "Script Draft", "Render Queue", "Quota Caps", "Manual Audio Mix"
+              ].map((tool, i) => (
+                <div key={i} className="chaos-cell" style={{ '--chaos-i': i }}>
+                  <span className="chaos-cell-label">{tool}</span>
+                </div>
               ))}
             </div>
             <span className="split-panel__visual-label">Disconnected toolchain</span>
@@ -510,23 +548,30 @@ export default function LandingPage({ onLoginRequest }) {
         <div className="split-panel split-panel--after">
           <div className="split-panel__badge split-panel__badge--success">With it</div>
           <h2>One studio. One cost cap. One approval path from idea to episode.</h2>
-          <p>Run locally at zero model cost. Keep humans in the loop. Ship episodes predictably without vendor price shocks or rewrite cycles.</p>
+          <p>
+            Run all complex audio and video synthesis offline with zero developer keys or active cloud billing. 
+            Maintain durable checkpoints at every stage, enforce strict human review on outreach, 
+            and prevent model deprecation or vendor rewrite cycles from stalling releases.
+          </p>
           <div className="split-panel__visual">
             <div className="unified-grid" aria-hidden="true">
-              <div className="unified-node unified-node--active">
-                <Activity size={16} />
-                <span>Studio</span>
-              </div>
-              <div className="unified-connector" />
-              <div className="unified-node">
-                <Users size={16} />
-                <span>Leads</span>
-              </div>
-              <div className="unified-connector" />
-              <div className="unified-node">
-                <Cpu size={16} />
-                <span>Gateway</span>
-              </div>
+              {[
+                { label: "Concept", icon: Zap, active: true },
+                { label: "Script", icon: Clapperboard, active: false },
+                { label: "Voice", icon: Mic, active: false },
+                { label: "Illustrations", icon: Sparkles, active: false },
+                { label: "Assembly", icon: Layers, active: false },
+                { label: "Render", icon: Cpu, active: false },
+                { label: "Publish", icon: Globe, active: false }
+              ].map((node, i, arr) => (
+                <div key={node.label} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div className={`unified-node ${node.active ? "unified-node--active" : ""}`}>
+                    <node.icon size={16} />
+                    <span>{node.label}</span>
+                  </div>
+                  {i < arr.length - 1 && <div className="unified-connector" />}
+                </div>
+              ))}
             </div>
             <span className="split-panel__visual-label">Unified pipeline</span>
           </div>
@@ -537,7 +582,7 @@ export default function LandingPage({ onLoginRequest }) {
       <section className="landing-section section-reveal" id="platform">
         <div className="landing-section__head">
           <p className="landing-kicker">Three pillars</p>
-          <h2>Built for teams that ship   not teams that configure.</h2>
+          <h2>Built for teams that ship not teams that configure.</h2>
           <p className="landing-section__sub">
             Every surface is designed around production reality: review gates, cost caps,
             and predictable turnaround from concept to final episode.
@@ -569,10 +614,31 @@ export default function LandingPage({ onLoginRequest }) {
         <div className="landing-workflow__demo">
           <PipelineStatusSkeleton />
           <div className="workflow-annotation">
-            <p>
-              <strong>Real-time checkpointing.</strong> Every stage persists state.
-              If a run crashes, it resumes from the last completed step   never from scratch.
-            </p>
+            <div>
+              <p style={{ marginBottom: "16px" }}>
+                <strong>Real-time checkpointing.</strong> Every stage persists state.
+                If a run crashes, it resumes from the last completed step never from scratch.
+              </p>
+              
+              {/* Detailed logs terminal window to reduce empty spacing [2] */}
+              <div className="terminal-logs" aria-hidden="true">
+                <div className="terminal-logs-header">
+                  <span className="terminal-dot red" />
+                  <span className="terminal-dot yellow" />
+                  <span className="terminal-dot green" />
+                  <span className="terminal-title">checkpoints.log</span>
+                </div>
+                <div className="terminal-logs-body">
+                  {checkpointLogs.map((log, i) => (
+                    <div key={i} className="terminal-log-line">
+                      <span className="terminal-time">[{log.time}]</span>
+                      <span className="terminal-task">{log.task}</span>
+                      <span className="terminal-result">... {log.result}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -581,7 +647,7 @@ export default function LandingPage({ onLoginRequest }) {
       <section className="landing-trust section-reveal" id="trust">
         <div className="landing-trust__copy">
           <p className="landing-kicker">Trust by default</p>
-          <h2>Human approval and compliance gates are structural   not footnotes.</h2>
+          <h2>Human approval and compliance gates are structural not footnotes.</h2>
           <p className="landing-trust__lead">
             We built safety into the routing layer, not the prompt layer.
             That means it cannot be bypassed by a clever instruction.
@@ -616,6 +682,27 @@ export default function LandingPage({ onLoginRequest }) {
                   <Check size={12} aria-hidden="true" /> Passed
                 </span>
               </div>
+              
+              {/* Added checklists and parameter checks to expand height [1] */}
+              <div className="trust-visual__row">
+                <span className="trust-visual__label">Opt out language verification</span>
+                <span className="trust-visual__value trust-visual__value--ok">
+                  <Check size={12} aria-hidden="true" /> Verified
+                </span>
+              </div>
+              <div className="trust-visual__row">
+                <span className="trust-visual__label">Webhook validation signatures</span>
+                <span className="trust-visual__value trust-visual__value--ok">
+                  <Check size={12} aria-hidden="true" /> HMAC Signed
+                </span>
+              </div>
+              <div className="trust-visual__row" style={{ borderBottom: "none", paddingBottom: "0" }}>
+                <span className="trust-visual__label">Deduplication scrubbing</span>
+                <span className="trust-visual__value trust-visual__value--ok">
+                  <Check size={12} aria-hidden="true" /> Scrubbed
+                </span>
+              </div>
+              
               <div className="trust-visual__actions">
                 <button type="button" className="trust-btn trust-btn--approve">
                   <Check size={14} /> Approve send
@@ -635,8 +722,8 @@ export default function LandingPage({ onLoginRequest }) {
           <p className="landing-kicker">Free-first economics</p>
           <h2>$0 before you add a paid key.</h2>
           <p className="landing-pricing__lead">
-            Evaluate the entire stack   script generation, storyboarding, voice casting,
-            rendering, outreach scoring, compliance checks   using mock and free providers.
+            Evaluate the entire stack script generation, storyboarding, voice casting,
+            rendering, outreach scoring, compliance checks using mock and free providers.
             Paid fallbacks stay opt-in, visible, and governed by hard cost caps.
           </p>
           <ul className="landing-pricing__checks">
@@ -664,7 +751,7 @@ export default function LandingPage({ onLoginRequest }) {
               </div>
               <div className="pricing-card__meter-labels">
                 <span>$0 used</span>
-                <span>$50 cap</span>
+                <span>$50 used</span>
               </div>
             </div>
             <div className="pricing-card__tiers">
@@ -687,7 +774,7 @@ export default function LandingPage({ onLoginRequest }) {
           <div className="testimonial-card__quote">
             <ShieldCheck size={24} aria-hidden="true" />
             <blockquote>
-              "We went from concept to a full 5-episode season in two weeks   with our team
+              "We went from concept to a full 5-episode season in two weeks with our team
               reviewing every script and approving every outreach batch. The fact that we
               never had to manage API keys or worry about a model deprecation breaking our
               pipeline is the real unlock."

@@ -81,7 +81,7 @@ export default function DashboardOnboarding({ onCreate }) {
               color: T.paper,
             }}
           >
-            Welcome to Agentic Content Studio
+            Welcome to Xeliai  Studio
           </div>
 
           <div

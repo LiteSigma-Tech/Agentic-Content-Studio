@@ -34,6 +34,8 @@ import {
   T,
   mono,
   sans,
+  useBreakpoint,
+  Modal,
 } from "../shared/ui";
 import { STAGES, SignalChain, StageReviewBanner } from "../shared/pipeline";
 import { ACTIVE_PROJECT_KEY } from "../library/AllEpisodes";
@@ -55,16 +57,16 @@ const GENRES = [
 
 // Rich details mapping for visual selector grid
 const GENRE_DETAILS = {
-  kids_cartoon: { label: "Kids Cartoon", desc: "Safe moderation gated models" },
-  brand_explainer: { label: "Brand Explainer", desc: "Professional layout pacing" },
-  drama: { label: "Drama", desc: "Cinematic script flow" },
-  comedy: { label: "Comedy", desc: "Humorous timing edits" },
-  educational_explainer: { label: "Educational", desc: "Clear instructional speech" },
-  horror_thriller: { label: "Horror / Thriller", desc: "Suspenseful audio mixes" },
-  sci_fi_fantasy: { label: "Sci Fi and Fantasy", desc: "Immersive keyframe art" },
-  documentary: { label: "Documentary", desc: "Deep narrator prioritization" },
-  action_adventure: { label: "Action and Adventure", desc: "Fast paced visual changes" },
-  marketing_ad: { label: "Marketing Ad", desc: "High conversion engagement" }
+  kids_cartoon: { label: "Kids Cartoon", desc: "Kid-safe cartoon animation" },
+  brand_explainer: { label: "Brand Explainer", desc: "Clean business presentation" },
+  drama: { label: "Drama", desc: "Emotional movie story" },
+  comedy: { label: "Comedy", desc: "Funny and playful story" },
+  educational_explainer: { label: "Educational", desc: "Clear lessons and explanations" },
+  horror_thriller: { label: "Horror / Thriller", desc: "Suspenseful and spooky" },
+  sci_fi_fantasy: { label: "Sci-Fi & Fantasy", desc: "Space and magical worlds" },
+  documentary: { label: "Documentary", desc: "Real-world stories with narration" },
+  action_adventure: { label: "Action & Adventure", desc: "Fast-moving excitement" },
+  marketing_ad: { label: "Marketing Ad", desc: "Catchy video promo" }
 };
 
 // Prompt templates to help consumers get started instantly
@@ -79,20 +81,20 @@ const PROMPT_INSPIRATIONS = [
 const PHASES = [
   {
     id: "writing_visuals",
-    name: "Writing & Visuals",
-    description: "Scriptwriting, storyboards, and keyframe illustrations",
+    name: "Story & Artwork",
+    description: "Writing the script and drawing the scenes",
     stages: ["generate_script", "generate_scenes", "storyboard", "generate_keyframes", "generate_clips"]
   },
   {
     id: "dialogue_audio",
-    name: "Dialogue & Sound",
-    description: "Character voice casting, TTS synthesis, and musical score",
+    name: "Voices & Music",
+    description: "Choosing voice actors and adding soundtrack",
     stages: ["cast_voices", "generate_audio", "synthesize_speech", "generate_music"]
   },
   {
     id: "assembly_render",
-    name: "Assembly & Render",
-    description: "Arranging timing, mixing dialogue/music, and exporting final video",
+    name: "Video Creation",
+    description: "Putting video, voices, and music together",
     stages: ["assemble_video", "render_video", "mix_audio", "mux_video"]
   }
 ];
@@ -103,6 +105,7 @@ export default function StudioCommandCenter() {
 
   const qc = useQueryClient();
   const reduceMotion = useReducedMotion();
+  const bp = useBreakpoint();
   const navigate = useNavigate();
   const inspectorRef = useRef(null);
   const createFormRef = useRef(null);
@@ -121,6 +124,7 @@ export default function StudioCommandCenter() {
   const [actionError, setActionError] = useState(null);
   const [resumingId, setResumingId] = useState(null);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [showVideoModal, setShowVideoModal] = useState(false);
 
   // Progressive Disclosure toggle
   const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
@@ -669,8 +673,10 @@ export default function StudioCommandCenter() {
                       display: "flex", 
                       gap: 8, 
                       overflowX: "auto", 
-                      paddingBottom: 8, 
-                      scrollbarWidth: "none" 
+                      padding: "4px 6px 10px 6px",
+                      margin: "-4px -6px 0 -6px",
+                      scrollbarWidth: "none",
+                      scrollPadding: "6px"
                     }} 
                     className="clean_scrollbar_wrapper"
                   >
@@ -691,13 +697,13 @@ export default function StudioCommandCenter() {
                             gap: 8,
                             padding: "10px 16px",
                             borderRadius: T.radiusMd,
-                            background: active ? `${T.violet}1C` : `${T.ink}40`,
+                            background: active ? `${T.violet}22` : `${T.ink}40`,
                             border: `1px solid ${active ? T.violet : T.line2}`,
+                            boxShadow: active ? `0 0 0 1px ${T.violet}` : "none",
                             color: active ? T.paper : T.muted,
                             cursor: creating ? "not-allowed" : "pointer",
                             font: `600 11px/1 ${mono}`,
                             transition: "all 0.15s ease",
-                            transform: active ? "scale(1.02)" : "scale(1)",
                             outline: "none"
                           }}
                         >
@@ -718,6 +724,9 @@ export default function StudioCommandCenter() {
                         <span style={{ font: `500 11px/1 ${mono}`, color: T.faint, textTransform: "uppercase" }}>Review Mode</span>
                         <button
                           type="button"
+                          role="switch"
+                          aria-checked={reviewMode}
+                          aria-label="Toggle Review Mode"
                           onClick={() => setReviewMode((r) => !r)}
                           disabled={creating}
                           style={{
@@ -725,24 +734,35 @@ export default function StudioCommandCenter() {
                             alignItems: "center",
                             background: "transparent",
                             border: "none",
+                            padding: 0,
                             cursor: creating ? "not-allowed" : "pointer",
                           }}
                         >
                           <span
                             style={{
-                              width: 34,
-                              height: 18,
+                              width: 36,
+                              height: 20,
                               borderRadius: 99,
                               padding: 2,
-                              background: reviewMode ? `${T.hitl}44` : `${T.faint}22`,
-                              border: `1px solid ${reviewMode ? T.hitl : T.line}`,
+                              background: reviewMode ? "rgba(16, 185, 129, 0.2)" : "rgba(167, 139, 250, 0.2)",
+                              border: `1.5px solid ${reviewMode ? "#10b981" : "#a78bfa"}`,
                               boxSizing: "border-box",
-                              transition: "all .2s",
+                              transition: "all .2s ease",
                               display: "flex",
+                              alignItems: "center",
                               justifyContent: reviewMode ? "flex-end" : "flex-start",
                             }}
                           >
-                            <span style={{ width: 14, height: 14, borderRadius: 99, background: reviewMode ? T.hitl : T.faint }} />
+                            <span 
+                              style={{ 
+                                width: 14, 
+                                height: 14, 
+                                borderRadius: 99, 
+                                background: reviewMode ? "#10b981" : "#a78bfa",
+                                boxShadow: reviewMode ? "0 0 6px rgba(16, 185, 129, 0.6)" : "0 0 6px rgba(167, 139, 250, 0.4)",
+                                transition: "all .2s ease" 
+                              }} 
+                            />
                           </span>
                         </button>
                       </div>
@@ -755,7 +775,7 @@ export default function StudioCommandCenter() {
                           <Lock size={12} /> Kids content routes script, dialogue &amp; music through moderation gated models.
                         </div>
                       ) : reviewMode ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, font: `500 11px/1.4 ${mono}`, color: T.hitl }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, font: `500 11px/1.4 ${mono}`, color: "#10b981" }}>
                           <ShieldCheck size={12} /> Pipeline will pause after each stage for your manual review.
                         </div>
                       ) : (
@@ -955,17 +975,20 @@ export default function StudioCommandCenter() {
             )}
 
             {/* Two Column Workspace Layout */}
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.8fr) minmax(0, 1.2fr)", gap: 16, alignItems: "start" }}>
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: bp === "desktop" ? "minmax(0, 1.35fr) minmax(0, 1fr)" : "1fr", 
+              gap: 16, 
+              alignItems: "stretch" 
+            }}>
               
-              {/* Left Column: Progress Timeline & Visual Video Player */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                
-                {/* Progressive visual tracker [2] */}
-                <Panel style={{ padding: 18 }}>
+              {/* Row 1, Column 1: Progressive visual tracker */}
+              <Panel style={{ padding: 18, height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", boxSizing: "border-box" }}>
+                <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                     <div>
                       <Eyebrow color={T.amber}>Production Progress</Eyebrow>
-                      <div style={{ font: `600 13px/1.3 ${sans}`, color: T.paper, marginTop: 2 }}>High Level Production Stages</div>
+                      <div style={{ font: `600 13px/1.3 ${sans}`, color: T.paper, marginTop: 2 }}>Production Stages</div>
                     </div>
                     <button
                       type="button"
@@ -992,7 +1015,7 @@ export default function StudioCommandCenter() {
                         e.currentTarget.style.color = T.muted;
                       }}
                     >
-                      {showAdvancedDetails ? "Hide Developer Nodes" : "Show Developer Nodes"}
+                      {showAdvancedDetails ? "Hide Detailed Steps" : "Show Detailed Steps"}
                     </button>
                   </div>
 
@@ -1003,11 +1026,11 @@ export default function StudioCommandCenter() {
                       
                       // Map state to human descriptions
                       const statusLabels = {
-                        done: "Completed",
-                        running: "Generating...",
-                        blocked: "Intervention Required",
-                        awaiting_review: "Awaiting Your Feedback",
-                        pending: "In Queue"
+                        done: "Complete",
+                        running: "In Progress",
+                        blocked: "Needs Attention",
+                        awaiting_review: "Ready for Review",
+                        pending: "Waiting"
                       };
 
                       return (
@@ -1045,7 +1068,7 @@ export default function StudioCommandCenter() {
                               <div style={{ font: `600 13px/1.2 ${sans}`, color: T.paper }}>
                                 {phase.name}
                               </div>
-                              <div style={{ font: `400 10px/1.3 ${sans}`, color: T.faint, marginTop: 2 }}>
+                              <div style={{ font: `400 11px/1.3 ${sans}`, color: T.faint, marginTop: 2 }}>
                                 {phase.description}
                               </div>
                             </div>
@@ -1072,13 +1095,13 @@ export default function StudioCommandCenter() {
                       >
                         <div style={{ borderTop: `1px solid ${T.line}`, paddingTop: 16, marginTop: 12 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                            <Eyebrow color={T.muted}>Granular Signal Pipeline Details</Eyebrow>
+                            <Eyebrow color={T.muted}>Step-by-Step Progress</Eyebrow>
                             <span style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>
-                              {doneCount}/{projectStages.length || STAGES.length} stages complete
+                              {doneCount}/{projectStages.length || STAGES.length} steps complete
                             </span>
                           </div>
                           {isFetching && !project ? (
-                            <div style={{ font: `500 12px/1 ${mono}`, color: T.faint, padding: "10px 0", textAlign: "center" }}>Loading chain…</div>
+                            <div style={{ font: `500 12px/1 ${mono}`, color: T.faint, padding: "10px 0", textAlign: "center" }}>Loading steps…</div>
                           ) : (
                             <div className="clean_scrollbar_wrapper" style={{ paddingBottom: 4 }}>
                               <SignalChain project={project} idx={doneCount} running={isProjectRunning} />
@@ -1088,121 +1111,191 @@ export default function StudioCommandCenter() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                </Panel>
+                </div>
+              </Panel>
 
-                {/* Final Video Output Container */}
-                <Panel style={{ padding: 18 }}>
+              {/* Row 1, Column 2: Voice Casting Details (hidden on smaller screens if no cast) */}
+              {(bp === "desktop" || cast.length > 0) && (
+                <Panel style={{ padding: 18, height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", boxSizing: "border-box" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <Mic color={T.violet} size={15} />
+                      <h4 style={{ font: `700 14px/1 ${sans}`, color: T.paper, margin: 0 }}>Voice Casting</h4>
+                    </div>
+
+                    {isFetching && !project ? (
+                      <div style={{ font: `500 11px/1 ${mono}`, color: T.faint }}>Loading voices…</div>
+                    ) : cast.length === 0 ? (
+                      <EmptyState title="No cast yet" body="Character voices will appear once voices are chosen." />
+                    ) : (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {cast.map(([character, voice]) => (
+                          <div
+                            key={character}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "10px 14px",
+                              background: `${T.line}18`,
+                              borderRadius: T.radiusMd,
+                              border: `1px solid ${T.line2}`
+                            }}
+                          >
+                            <span style={{ font: `600 12px/1 ${sans}`, color: T.paper }}>{character}</span>
+                            <span style={{
+                              font: `500 10px/1 ${mono}`,
+                              color: T.violet,
+                              background: `${T.violet}12`,
+                              padding: "3px 8px",
+                              borderRadius: T.radiusMd,
+                              border: `1px solid ${T.violet}22`
+                            }}>
+                              {voice}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ 
+                    display: "flex", 
+                    justifyContent: "space-between", 
+                    alignItems: "center", 
+                    marginTop: 14,
+                    paddingTop: 10,
+                    borderTop: `1px solid ${T.line}`,
+                    font: `500 10px/1 ${mono}`, 
+                    color: T.faint 
+                  }}>
+                    <span>{cast.length} Character Voice{cast.length === 1 ? "" : "s"}</span>
+                    <span style={{ color: T.teal }}>Voice Audio</span>
+                  </div>
+                </Panel>
+              )}
+
+              {/* Row 2, Column 1: Final Video Output Container */}
+              {bp !== "desktop" ? (
+                /* Compact trigger on smaller screens to preserve vertical space */
+                <Panel style={{ padding: 16, boxSizing: "border-box" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                      <div style={{ 
+                        width: 38, 
+                        height: 38, 
+                        borderRadius: 8, 
+                        background: isProjectDone ? `${T.teal}18` : isProjectRunning ? `${T.amber}18` : `${T.line}22`,
+                        border: `1px solid ${isProjectDone ? `${T.teal}33` : isProjectRunning ? `${T.amber}33` : T.line2}`,
+                        display: "flex", 
+                        alignItems: "center", 
+                        justifyContent: "center",
+                        flexShrink: 0
+                      }}>
+                        {isProjectDone ? <Play color={T.teal} size={18} /> : <Film color={isProjectRunning ? T.amber : T.muted} size={18} />}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ font: `700 14px/1.2 ${sans}`, color: T.paper }}>
+                          Final Video Output
+                        </div>
+                        <div style={{ font: `400 11px/1.3 ${sans}`, color: isProjectDone ? T.teal : T.faint, marginTop: 2, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                          {isProjectDone 
+                            ? "Video is ready to play" 
+                            : isProjectRunning 
+                              ? "Creating your video…" 
+                              : failedStage 
+                                ? "Production paused" 
+                                : awaitingStageName 
+                                  ? "Ready for your review" 
+                                  : "No video created yet"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ flexShrink: 0 }}>
+                      {isProjectDone ? (
+                        <Btn size="sm" kind="primary" onClick={() => setShowVideoModal(true)}>
+                          <Play size={13} style={{ marginRight: 6 }} /> Watch Video
+                        </Btn>
+                      ) : (
+                        <Btn size="sm" onClick={() => setShowVideoModal(true)}>
+                          View Status
+                        </Btn>
+                      )}
+                    </div>
+                  </div>
+                </Panel>
+              ) : (
+                /* Full inline player on desktop */
+                <Panel style={{ padding: 18, height: "100%", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                     <Film color={T.teal} size={15} />
                     <h4 style={{ font: `700 14px/1 ${sans}`, color: T.paper, margin: 0 }}>Final Video Output</h4>
                   </div>
 
-                  {isProjectDone ? (
-                    <div style={{ marginTop: 8 }}>
-                      <video
-                        controls
-                        style={{ width: "100%", maxHeight: 380, borderRadius: T.radiusMd, background: "#000" }}
-                        src={studioApiCalls.videoUrl ? studioApiCalls.videoUrl(project.id) : project.final_av_uri || project.final_uri}
-                      >
-                        Your browser does not support the video tag.
-                      </video>
-                    </div>
-                  ) : (
-                    <div style={{
-                      width: "100%", height: 220, display: "flex", flexDirection: "column",
-                      alignItems: "center", justifyContent: "center", gap: 12,
-                      background: `${T.ink}88`, borderRadius: T.radiusMd, border: `2px dashed ${T.line2}`,
-                      padding: 24, textAlign: "center"
-                    }}>
-                      {isProjectRunning ? (
-                        <>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <Lamp on color={T.teal} size={10} />
-                            <span style={{ font: `600 13px/1 ${sans}`, color: T.teal }}>Processing</span>
-                          </div>
-                          <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>Synthesizing Media…</div>
-                          <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint, maxWidth: 320 }}>
-                            The agent engine is actively producing keyframes, casting voices, and generating layout clips. Your player will load here once the assembly completes.
-                          </div>
-                        </>
-                      ) : failedStage ? (
-                        <>
-                          <div style={{ font: `600 13px/1 ${sans}`, color: T.clay }}>Synthesis Blocked</div>
-                          <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>Output Synthesis Suspended</div>
-                          <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint, maxWidth: 320 }}>
-                            Generation failed at stage <span style={{ color: T.clay, fontFamily: mono }}>{failedStage.name.replace(/_/g, " ")}</span>. Resolve the block to resume synthesis.
-                          </div>
-                        </>
-                      ) : awaitingStageName ? (
-                        <>
-                          <div style={{ font: `600 13px/1 ${sans}`, color: T.hitl }}>Awaiting Decision</div>
-                          <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>Human Review Required</div>
-                          <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint, maxWidth: 320 }}>
-                            The pipeline has paused on <span style={{ color: T.hitl, fontFamily: mono }}>{awaitingStageName.replace(/_/g, " ")}</span>. Approve this step to generate your final output.
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <Film color={T.faint} size={24} />
-                          <div style={{ font: `700 14px/1 ${sans}`, color: T.faint }}>Idle Queue</div>
-                          <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint, maxWidth: 320 }}>
-                            Select or launch a project timeline to view high fidelity video playbacks here.
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </Panel>
-              </div>
-
-              {/* Right Column: Shot details and voice casting */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                
-                {/* Voice Casting Details */}
-                <Panel style={{ padding: 18 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <Mic color={T.violet} size={15} />
-                    <h4 style={{ font: `700 14px/1 ${sans}`, color: T.paper, margin: 0 }}>Voice Casting</h4>
-                  </div>
-
-                  {isFetching && !project ? (
-                    <div style={{ font: `500 11px/1 ${mono}`, color: T.faint }}>Loading cast…</div>
-                  ) : cast.length === 0 ? (
-                    <EmptyState title="No cast yet" body="Cast characters will appear once this episode resolves the Cast Voices stage." />
-                  ) : (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {cast.map(([character, voice]) => (
-                        <div
-                          key={character}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "8px 12px",
-                            background: `${T.line}18`,
-                            borderRadius: T.radiusMd,
-                            border: `1px solid ${T.line2}`
-                          }}
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                    {isProjectDone ? (
+                      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#000", borderRadius: T.radiusMd, overflow: "hidden", minHeight: 320 }}>
+                        <video
+                          controls
+                          style={{ width: "100%", height: "100%", maxHeight: 380, borderRadius: T.radiusMd, background: "#000", objectFit: "contain" }}
+                          src={studioApiCalls.videoUrl ? studioApiCalls.videoUrl(project.id) : project.final_av_uri || project.final_uri}
                         >
-                          <span style={{ font: `600 12px/1 ${sans}`, color: T.paper }}>{character}</span>
-                          <span style={{
-                            font: `500 10px/1 ${mono}`,
-                            color: T.violet,
-                            background: `${T.violet}12`,
-                            padding: "3px 8px",
-                            borderRadius: T.radiusMd,
-                            border: `1px solid ${T.violet}22`
-                          }}>
-                            {voice}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                          Your browser does not support the video tag.
+                        </video>
+                      </div>
+                    ) : (
+                      <div style={{
+                        flex: 1, minHeight: 320, display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center", gap: 12,
+                        background: `${T.ink}88`, borderRadius: T.radiusMd, border: `2px dashed ${T.line2}`,
+                        padding: 24, textAlign: "center"
+                      }}>
+                        {isProjectRunning ? (
+                          <>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <Lamp on color={T.teal} size={10} />
+                              <span style={{ font: `600 13px/1 ${sans}`, color: T.teal }}>In Progress</span>
+                            </div>
+                            <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>Creating Your Video…</div>
+                            <div style={{ font: `400 12px/1.5 ${sans}`, color: T.faint, maxWidth: 320 }}>
+                              We are creating the pictures, voices, and music for your episode. It will appear here as soon as it is finished!
+                            </div>
+                          </>
+                        ) : failedStage ? (
+                          <>
+                            <div style={{ font: `600 13px/1 ${sans}`, color: T.clay }}>Production Paused</div>
+                            <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>Something Needs Attention</div>
+                            <div style={{ font: `400 12px/1.5 ${sans}`, color: T.faint, maxWidth: 320 }}>
+                              We ran into an issue during the <span style={{ color: T.clay, fontFamily: mono }}>{failedStage.name.replace(/_/g, " ")}</span> step. Please review above to continue.
+                            </div>
+                          </>
+                        ) : awaitingStageName ? (
+                          <>
+                            <div style={{ font: `600 13px/1 ${sans}`, color: T.hitl }}>Review Needed</div>
+                            <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>Your Approval Needed</div>
+                            <div style={{ font: `400 12px/1.5 ${sans}`, color: T.faint, maxWidth: 320 }}>
+                              The video is paused at <span style={{ color: T.hitl, fontFamily: mono }}>{awaitingStageName.replace(/_/g, " ")}</span>. Please review and approve this step above to continue.
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <Film color={T.faint} size={24} />
+                            <div style={{ font: `700 14px/1 ${sans}`, color: T.faint }}>No Video Yet</div>
+                            <div style={{ font: `400 12px/1.5 ${sans}`, color: T.faint, maxWidth: 320 }}>
+                              Create a new episode or choose a project to watch the video here.
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </Panel>
+              )}
 
-                {/* Shot Breakdowns */}
-                <Panel style={{ padding: 18 }}>
+              {/* Row 2, Column 2: Shot Breakdowns (hidden on smaller screens if no shots) */}
+              {(bp === "desktop" || hasRealShots) && (
+                <Panel style={{ padding: 18, height: "100%", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                     <Film color={T.amber} size={15} />
                     <h4 style={{ font: `700 14px/1 ${sans}`, color: T.paper, margin: 0 }}>Shot Breakdown</h4>
@@ -1211,11 +1304,13 @@ export default function StudioCommandCenter() {
                   {isFetching && !project ? (
                     <div style={{ font: `500 11px/1 ${mono}`, color: T.faint }}>Loading shots…</div>
                   ) : !hasRealShots ? (
-                    <EmptyState title="No shots yet" body="Script or keyframe stages have not populated shot data yet." />
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <EmptyState title="No shots yet" body="Shots will appear here once the script is generated." />
+                    </div>
                   ) : (
-                    <div style={{ maxHeight: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 4 }}>
+                    <div style={{ flex: 1, minHeight: 320, maxHeight: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 4 }}>
                       {scenes.map((scene, sceneIdx) => (
-                        <div key={sceneIdx} style={{ borderBottom: sceneIdx < scenes.length - 1 ? `1px solid ${T.line2}` : "none", pb: 12 }}>
+                        <div key={sceneIdx} style={{ borderBottom: sceneIdx < scenes.length - 1 ? `1px solid ${T.line2}` : "none", paddingBottom: 12 }}>
                           <Eyebrow color={T.amber} style={{ marginBottom: 6 }}>Scene {sceneIdx + 1}</Eyebrow>
                           <div style={{ display: "grid", gap: 8 }}>
                             {(scene.shots || []).map((shot, shotIdx) => (
@@ -1256,7 +1351,7 @@ export default function StudioCommandCenter() {
                     </div>
                   )}
                 </Panel>
-              </div>
+              )}
 
             </div>
           </div>
@@ -1463,6 +1558,82 @@ export default function StudioCommandCenter() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Final Video Output Modal (especially for mobile/smaller screens) */}
+      <Modal
+        isOpen={showVideoModal}
+        onClose={() => setShowVideoModal(false)}
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Film color={T.teal} size={16} />
+            <span>Final Video Output</span>
+          </div>
+        }
+        maxWidth={680}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {isProjectDone ? (
+            <div style={{ background: "#000", borderRadius: T.radiusMd, overflow: "hidden", minHeight: 260, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <video
+                controls
+                autoPlay
+                style={{ width: "100%", maxHeight: "65vh", borderRadius: T.radiusMd, background: "#000", objectFit: "contain" }}
+                src={studioApiCalls.videoUrl ? studioApiCalls.videoUrl(project.id) : project?.final_av_uri || project?.final_uri}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          ) : (
+            <div style={{
+              minHeight: 220, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 12,
+              background: `${T.ink}88`, borderRadius: T.radiusMd, border: `2px dashed ${T.line2}`,
+              padding: 24, textAlign: "center"
+            }}>
+              {isProjectRunning ? (
+                <>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <Lamp on color={T.teal} size={10} />
+                    <span style={{ font: `600 13px/1 ${sans}`, color: T.teal }}>In Progress</span>
+                  </div>
+                  <div style={{ font: `700 16px/1.2 ${sans}`, color: T.paper }}>Creating Your Video…</div>
+                  <div style={{ font: `400 13px/1.5 ${sans}`, color: T.muted, maxWidth: 360 }}>
+                    We are currently creating the artwork, voices, and music for your episode. It will appear here as soon as it is finished!
+                  </div>
+                </>
+              ) : failedStage ? (
+                <>
+                  <div style={{ font: `600 13px/1 ${sans}`, color: T.clay }}>Production Paused</div>
+                  <div style={{ font: `700 16px/1.2 ${sans}`, color: T.paper }}>Something Needs Attention</div>
+                  <div style={{ font: `400 13px/1.5 ${sans}`, color: T.muted, maxWidth: 360 }}>
+                    We ran into an issue during the <span style={{ color: T.clay, fontFamily: mono }}>{failedStage.name.replace(/_/g, " ")}</span> step. Please review above to continue.
+                  </div>
+                </>
+              ) : awaitingStageName ? (
+                <>
+                  <div style={{ font: `600 13px/1 ${sans}`, color: T.hitl }}>Review Needed</div>
+                  <div style={{ font: `700 16px/1.2 ${sans}`, color: T.paper }}>Your Approval Needed</div>
+                  <div style={{ font: `400 13px/1.5 ${sans}`, color: T.muted, maxWidth: 360 }}>
+                    The video is paused at <span style={{ color: T.hitl, fontFamily: mono }}>{awaitingStageName.replace(/_/g, " ")}</span>. Please review and approve this step above to continue.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Film color={T.faint} size={28} />
+                  <div style={{ font: `700 15px/1 ${sans}`, color: T.paper }}>No Video Yet</div>
+                  <div style={{ font: `400 13px/1.5 ${sans}`, color: T.muted, maxWidth: 360 }}>
+                    Create a new episode or choose a project to watch the video here.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Btn size="sm" onClick={() => setShowVideoModal(false)}>Close</Btn>
+          </div>
+        </div>
+      </Modal>
       
     </motion.div>
   );

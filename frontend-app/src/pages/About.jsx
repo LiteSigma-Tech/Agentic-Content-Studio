@@ -30,7 +30,7 @@ export default function About({ onLoginRequest }) {
         </p>
         <h1>Eliminating friction between creative concept and rendered reality.</h1>
         <p className="page-hero__lead">
-          Agentic Content Studio was built to give modern content and growth teams a single, governed command center. We bridge concept, automation, and outreach without the vendor fragmentation.
+          Xeliai  Studio was built to give modern content and growth teams a single, governed command center. We bridge concept, automation, and outreach without the vendor fragmentation.
         </p>
       </section>
 

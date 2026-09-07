@@ -1,4 +1,4 @@
-# Agentic Content & Lead Platform
+# Xeliai  & Lead Platform
 
 A modular platform with three product surfaces — **autonomous lead generation**, a
 **video studio**, and an **audio studio** for generating episodic content (drama,

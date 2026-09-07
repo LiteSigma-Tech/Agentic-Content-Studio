@@ -1,6 +1,8 @@
 import React, { useEffect } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { Clapperboard } from "lucide-react";
 import { useAuth } from "./AuthContext";
+import { useTheme } from "./ThemeContext";
 import ErrorBoundary from "./ErrorBoundary";
 import AppShell from "./app/AppShell";
 
@@ -59,9 +61,11 @@ import HelpSupport from "./app/help/HelpSupport";
 
 function RequireAuth({ children }) {
   const { isLoggedIn, loading } = useAuth();
+  const { theme } = useTheme();
   const location = useLocation();
 
   if (loading) {
+    const logoSrc = theme === 'dark' ? '/studio_logo_darkmode.webp' : '/studio_logo_lightmode.webp';
     return (
       <div
         style={{
@@ -69,13 +73,33 @@ function RequireAuth({ children }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-          fontSize: 12,
-          color: "#A6987F",
-          background: "#14110E",
+          background: theme === "dark" ? "#06070a" : "#f8f9fa",
         }}
       >
-        LOADING...
+        <img
+          src={logoSrc}
+          alt="Studio"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+            const fallback = e.currentTarget.nextElementSibling;
+            if (fallback) fallback.style.display = "flex";
+          }}
+          style={{ height: 32, width: "auto", display: "block" }}
+        />
+        <div style={{ display: "none", alignItems: "center", gap: 8 }}>
+          <Clapperboard size={24} color="#8b5cf6" />
+          <span
+            style={{
+              fontWeight: 800,
+              fontSize: 18,
+              color: theme === "dark" ? "#f5f0e8" : "#1a1c23",
+              letterSpacing: "-0.02em",
+              fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            }}
+          >
+            STUDIO
+          </span>
+        </div>
       </div>
     );
   }

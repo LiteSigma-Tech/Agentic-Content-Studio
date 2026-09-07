@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useTheme } from "../../ThemeContext";
 import PropTypes from "prop-types";
-import { AlertTriangle, Copy, Check, Info } from "lucide-react";
+import { AlertTriangle, Copy, Check, Info, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 export const DARK_TOKENS = {
@@ -24,8 +24,8 @@ export const DARK_TOKENS = {
   danger: "#ef4444",
   radiusMd: "8px",
   radiusLg: "14px",
-  shadow: "0 24px 80px rgb(0 0 0 / 0.5)",
-  shadowGlow: "0 0 40px rgb(255 255 255 / 0.06)",
+  shadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+  shadowGlow: "none",
 };
 
 export const LIGHT_TOKENS = {
@@ -48,8 +48,8 @@ export const LIGHT_TOKENS = {
   danger: "#ef4444",
   radiusMd: "8px",
   radiusLg: "14px",
-  shadow: "0 24px 80px rgb(0 0 0 / 0.08)",
-  shadowGlow: "0 0 40px rgb(0 0 0 / 0.04)",
+  shadow: "0 4px 16px rgba(0, 0, 0, 0.06)",
+  shadowGlow: "none",
 };
 
 export function currentTokens() {
@@ -153,7 +153,7 @@ export function Lamp({ on, color = T.amber, size = 9 }) {
         height: size,
         borderRadius: 99,
         background: on ? color : T.line2,
-        boxShadow: on ? `0 0 0 2px ${color}22, 0 0 10px ${color}` : "none",
+        boxShadow: on ? `0 0 4px ${color}66` : "none",
         transition: "all .3s ease",
       }}
       className={on ? "led-pulse" : ""}
@@ -173,7 +173,7 @@ export function Panel({ children, style, className = "", animate = false, ...pro
     background: T.panel,
     border: `1px solid ${T.line}`,
     borderRadius: 10,
-    boxShadow: T.shadowGlow,
+    boxShadow: "none",
     transition: "background 0.2s ease, border-color 0.2s ease",
     ...style,
   };
@@ -688,4 +688,97 @@ export function GenericSignalChain({ idx, running }) {
 GenericSignalChain.propTypes = {
   idx: PropTypes.number.isRequired,
   running: PropTypes.bool,
+};
+
+export function Modal({ isOpen, onClose, title, children, maxWidth = 560 }) {
+  useTheme();
+  if (!isOpen) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0, 0, 0, 0.75)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          padding: 16,
+        }}
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            maxWidth,
+            width: "100%",
+            background: T.panel,
+            border: `1px solid ${T.line}`,
+            borderRadius: 12,
+            boxShadow: "0 16px 36px rgba(0, 0, 0, 0.5)",
+            padding: 20,
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+            overflow: "hidden",
+          }}
+        >
+          {title && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 14,
+                paddingBottom: 10,
+                borderBottom: `1px solid ${T.line}`,
+              }}
+            >
+              <div style={{ font: `700 15px/1.2 ${sans}`, color: T.paper }}>
+                {title}
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close dialog"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: T.muted,
+                  cursor: "pointer",
+                  padding: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 4,
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+          <div style={{ overflowY: "auto", flex: 1 }}>{children}</div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+Modal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  title: PropTypes.node,
+  children: PropTypes.node,
+  maxWidth: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
 };

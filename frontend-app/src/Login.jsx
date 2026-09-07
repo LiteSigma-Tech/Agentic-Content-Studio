@@ -111,7 +111,7 @@ export default function Login({ onSuccess }) {
           <span style={{ display: 'inline-grid', placeItems: 'center', width: 28, height: 28, border: `1.5px solid ${T.violet}`, borderRadius: 6, color: T.violet, background: `${T.violet}1A` }}>
             <Clapperboard size={16} aria-hidden="true" />
           </span>
-          <span style={{ font: `700 15px/1 ${sans}`, color: T.paper, letterSpacing: '-0.01em' }}>Agentic Content Studio</span>
+          <span style={{ font: `700 15px/1 ${sans}`, color: T.paper, letterSpacing: '-0.01em' }}>Xeliai  Studio</span>
         </div>
 
         {/* Mode toggle */}

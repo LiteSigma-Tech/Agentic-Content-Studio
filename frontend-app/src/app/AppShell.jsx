@@ -10,7 +10,6 @@ import { useAuth } from "../AuthContext";
 import { useTheme } from "../ThemeContext";
 import { usageApi, agentsApiCalls, studioApiCalls, modelsApi } from "../api";
 import { T, mono, sans, useBreakpoint } from "./shared/ui";
-import { isOnboardingDismissed } from "./onboarding/OnboardingWizard";
 import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
 
 const TOP_NAV = [
@@ -66,6 +65,32 @@ function activeSectionId(pathname) {
   return match?.id || "dashboard";
 }
 
+function StudioLogo({ logoSrc }) {
+  const [loadError, setLoadError] = useState(false);
+  if (loadError) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <Clapperboard size={18} color={T.violet} />
+        <span style={{ font: `800 13px/1 ${sans}`, letterSpacing: "-0.02em", color: T.paper }}>
+          STUDIO
+        </span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={logoSrc}
+      alt="Studio App"
+      onError={() => setLoadError(true)}
+      style={{ height: 22, width: "auto", display: "block" }}
+    />
+  );
+}
+
+StudioLogo.propTypes = {
+  logoSrc: PropTypes.string.isRequired,
+};
+
 export default function AppShell({ onLoginRequest }) {
   const breakpoint = useBreakpoint();
   const isMobile = breakpoint === "mobile";
@@ -87,30 +112,17 @@ export default function AppShell({ onLoginRequest }) {
   const { data: allProjectsData } = useQuery({ queryKey: ["all-projects"], queryFn: () => studioApiCalls.listProjects(1, 0), staleTime: 10000, refetchInterval: 15000 });
   const { data: routingConfig } = useQuery({ queryKey: ["routing-config"], queryFn: modelsApi.getConfig, staleTime: 30000 });
 
-  // Phase 4 - zero-projects onboarding redirect gate. Fires only while
-  // not yet dismissed; once markOnboardingDismissed() has been called
-  // (Skip or Finish), this never auto-navigates again regardless of
-  // project count -- re-entry after that point is manual only, via the
-  // Help/Support link.
-  useEffect(() => {
-    if (!allProjectsData) return;
-    const hasProjects = (allProjectsData.items?.length ?? 0) > 0;
-    if (!hasProjects && !isOnboardingDismissed() && location.pathname !== "/welcome") {
-      navigate("/welcome");
-    }
-  }, [allProjectsData, location.pathname, navigate]);
-
-  // Close the drawer on route change.
+  // Close drawer on route change.
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
 
-  // Close the drawer if the viewport grows out of mobile.
+  // Close drawer if viewport scales out of mobile bounds.
   useEffect(() => {
     if (!isMobile) setDrawerOpen(false);
   }, [isMobile]);
 
-  // Lock background scroll while the drawer is open.
+  // Retain background viewport lock during drawer states.
   useEffect(() => {
     if (!(isMobile && drawerOpen)) return undefined;
     const prev = document.body.style.overflow;
@@ -118,7 +130,7 @@ export default function AppShell({ onLoginRequest }) {
     return () => { document.body.style.overflow = prev; };
   }, [isMobile, drawerOpen]);
 
-  // Escape closes the drawer; focus the close button on open.
+  // Escape handlers
   useEffect(() => {
     if (!drawerOpen) return undefined;
     closeBtnRef.current?.focus();
@@ -164,6 +176,10 @@ export default function AppShell({ onLoginRequest }) {
           .shell-backdrop, .shell-drawer{animation:none !important}
         }
         select:focus,input:focus,button:focus-visible{outline:2px solid ${T.amber};outline-offset:1px}
+        
+        /* Hide scrollbars elegantly on mobile horizontal tabs lists */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
       {/* ── MOBILE: top app bar + off-canvas drawer ─────────────── */}
@@ -174,8 +190,8 @@ export default function AppShell({ onLoginRequest }) {
             justifyContent: "space-between", padding: "0 16px", background: T.panel,
             borderBottom: `1px solid ${T.line}`, position: "sticky", top: 0, zIndex: 20,
           }}>
-            <Link to="/" aria-label="Go to homepage" style={{ display: "flex" }}>
-              <img src={logoSrc} alt="Studio App" style={{ height: 22, width: "auto", display: "block" }} />
+            <Link to="/" aria-label="Go to homepage" style={{ display: "flex", textDecoration: "none" }}>
+              <StudioLogo logoSrc={logoSrc} />
             </Link>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <Radio size={13} color={onAir ? T.amber : T.faint} className={onAir ? "led-pulse" : ""} aria-hidden="true" />
@@ -184,7 +200,10 @@ export default function AppShell({ onLoginRequest }) {
                 aria-label="Open navigation"
                 aria-expanded={drawerOpen}
                 aria-controls="shell-mobile-drawer"
-                style={{ background: "transparent", border: "none", color: T.paper, cursor: "pointer", padding: 4, display: "flex" }}
+                style={{ 
+                  background: "transparent", border: "none", color: T.paper, cursor: "pointer", 
+                  padding: 8, display: "flex", width: 44, height: 44, alignItems: "center", justifyContent: "center" 
+                }}
               >
                 <Menu size={22} />
               </button>
@@ -214,14 +233,17 @@ export default function AppShell({ onLoginRequest }) {
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-                  <Link to="/" aria-label="Go to homepage" onClick={() => setDrawerOpen(false)} style={{ display: "flex" }}>
-                    <img src={logoSrc} alt="Studio App" style={{ height: 22, width: "auto", display: "block" }} />
+                  <Link to="/" aria-label="Go to homepage" onClick={() => setDrawerOpen(false)} style={{ display: "flex", textDecoration: "none" }}>
+                    <StudioLogo logoSrc={logoSrc} />
                   </Link>
                   <button
                     ref={closeBtnRef}
                     onClick={() => setDrawerOpen(false)}
                     aria-label="Close navigation"
-                    style={{ background: "none", border: "none", color: T.paper, cursor: "pointer", padding: 4, display: "flex" }}
+                    style={{ 
+                      background: "none", border: "none", color: T.paper, cursor: "pointer", 
+                      padding: 8, display: "flex", width: 44, height: 44, alignItems: "center", justifyContent: "center" 
+                    }}
                   >
                     <X size={20} />
                   </button>
@@ -231,7 +253,7 @@ export default function AppShell({ onLoginRequest }) {
                   {TOP_NAV.map((s) => (
                     <button key={s.id} onClick={() => goToSection(s)} style={{
                       display: "flex", alignItems: "center", gap: 11, padding: "12px 12px", borderRadius: T.radiusMd,
-                      border: "none", cursor: "pointer", textAlign: "left",
+                      border: "none", cursor: "pointer", textAlign: "left", minHeight: 44,
                       background: s.id === activeSection.id ? T.raised : "transparent",
                       color: s.id === activeSection.id ? T.paper : T.muted,
                       font: `600 13px/1 ${sans}`, position: "relative",
@@ -249,15 +271,16 @@ export default function AppShell({ onLoginRequest }) {
                     style={{
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       background: "none", border: `1px solid ${T.line}`, color: T.muted,
-                      padding: "10px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: mono,
+                      padding: "12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: mono,
+                      minHeight: 44
                     }}
                   >
                     {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
                     {theme === "dark" ? "LIGHT MODE" : "DARK MODE"}
                   </button>
                   {isLoggedIn
-                    ? <button onClick={logout} style={{ background: "none", border: `1px solid ${T.line}`, color: T.faint, padding: "10px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: mono }}>LOGOUT</button>
-                    : <button onClick={() => { setDrawerOpen(false); onLoginRequest?.(); }} style={{ background: T.violet, border: "none", color: T.ink, padding: "10px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: mono, fontWeight: 700 }}>SIGN IN</button>}
+                    ? <button onClick={logout} style={{ background: "none", border: `1px solid ${T.line}`, color: T.faint, padding: "12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: mono, minHeight: 44 }}>LOGOUT</button>
+                    : <button onClick={() => { setDrawerOpen(false); onLoginRequest?.(); }} style={{ background: T.violet, border: "none", color: T.ink, padding: "12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: mono, fontWeight: 700, minHeight: 44 }}>SIGN IN</button>}
                 </div>
               </nav>
             </>
@@ -272,8 +295,8 @@ export default function AppShell({ onLoginRequest }) {
           padding: "16px 8px", display: "flex", flexDirection: "column",
           alignItems: "center", gap: 6, flexShrink: 0,
         }}>
-          <Link to="/" aria-label="Go to homepage" style={{ display: "flex", marginBottom: 14 }}>
-            <img src={logoSrc} alt="Studio App" style={{ height: 20, width: "auto" }} />
+          <Link to="/" aria-label="Go to homepage" style={{ display: "flex", marginBottom: 14, textDecoration: "none" }}>
+            <StudioLogo logoSrc={logoSrc} />
           </Link>
           {TOP_NAV.map((s) => (
             <button
@@ -315,8 +338,8 @@ export default function AppShell({ onLoginRequest }) {
       {/* ── DESKTOP: full labeled sidebar ────────────────────────── */}
       {isDesktop && (
         <nav aria-label="Main navigation" style={{ width: 180, background: T.panel, borderRight: `1px solid ${T.line}`, padding: 16, display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
-          <Link to="/" aria-label="Go to homepage" style={{ display: "flex", marginBottom: 16 }}>
-            <img src={logoSrc} alt="Studio App" style={{ height: 22, width: "auto", display: "block" }} />
+          <Link to="/" aria-label="Go to homepage" style={{ display: "flex", marginBottom: 16, textDecoration: "none" }}>
+            <StudioLogo logoSrc={logoSrc} />
           </Link>
           {TOP_NAV.map((s) => (
             <button key={s.id} onClick={() => goToSection(s)} style={{
@@ -353,9 +376,19 @@ export default function AppShell({ onLoginRequest }) {
 
       {/* ── Content column ───────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
-        <header style={{ height: 56, borderBottom: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", background: T.panel, flexShrink: 0, boxShadow: T.shadowGlow }}>
-          <div style={{ font: `700 14px/1 ${sans}`, letterSpacing: "-0.01em" }}>{activeSection.label}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 18 }}>
+        <header style={{ 
+          height: 56, borderBottom: `1px solid ${T.line}`, display: "flex", alignItems: "center", 
+          justifyContent: "space-between", padding: isMobile ? "0 16px" : "0 20px", background: T.panel, 
+          flexShrink: 0, boxShadow: T.shadowGlow 
+        }}>
+          {/* Prevent text overlap on tight screens */}
+          <div style={{ 
+            font: `700 14px/1 ${sans}`, letterSpacing: "-0.01em", 
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, marginRight: 8 
+          }}>
+            {activeSection.label}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 18, flexShrink: 0 }}>
             {!isMobile && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -373,21 +406,26 @@ export default function AppShell({ onLoginRequest }) {
           </div>
         </header>
 
+        {/* Sub Navigation Bar - with hidden custom scrollbar behavior */}
         {subItems.length > 0 && (
-          <div style={{
-            display: "flex", gap: 6, padding: isMobile ? "10px 16px" : "14px 24px 0",
-            borderBottom: `1px solid ${T.line}`, overflowX: "auto", WebkitOverflowScrolling: "touch",
-          }}>
+          <div 
+            className="no-scrollbar"
+            style={{
+              display: "flex", gap: 6, padding: isMobile ? "10px 16px" : "14px 24px 0",
+              borderBottom: `1px solid ${T.line}`, overflowX: "auto", WebkitOverflowScrolling: "touch",
+            }}
+          >
             {subItems.map((s) => (
               <button key={s.path} onClick={() => navigate(s.path)} style={{
                 flexShrink: 0,
-                padding: isMobile ? "8px 12px" : "8px 12px",
+                padding: isMobile ? "10px 14px" : "8px 12px", // Slightly expanded hit states on mobile
                 borderRadius: isMobile ? T.radiusMd : `${T.radiusMd} ${T.radiusMd} 0 0`,
                 cursor: "pointer", whiteSpace: "nowrap",
                 border: isMobile ? `1px solid ${s.path === activeSubPath ? T.line2 : T.line}` : "none",
                 borderBottom: isMobile ? undefined : `2px solid ${s.path === activeSubPath ? T.violet : "transparent"}`,
                 background: isMobile ? (s.path === activeSubPath ? T.raised : "transparent") : "transparent",
                 color: s.path === activeSubPath ? T.paper : T.muted, font: `600 12px/1 ${sans}`,
+                minHeight: isMobile ? 36 : "initial" // Clear tap target assurance
               }}>
                 {s.label}
               </button>
@@ -395,7 +433,8 @@ export default function AppShell({ onLoginRequest }) {
           </div>
         )}
 
-        <div style={{ flex: 1, padding: isMobile ? "16px" : "24px 28px 40px", overflow: "auto" }}>
+        {/* Scaled page padding on narrower display frames */}
+        <div style={{ flex: 1, padding: isMobile ? "12px" : "24px 28px 40px", overflow: "auto" }}>
           <Outlet />
         </div>
       </div>

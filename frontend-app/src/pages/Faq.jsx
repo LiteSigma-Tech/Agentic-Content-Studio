@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react'
 
 const faqCategories = [
   {
-    q: 'Can I use Agentic Content Studio completely offline?',
+    q: 'Can I use Xeliai  Studio completely offline?',
     a: 'Yes! Free mode uses local or mock providers with real FFMPEG rendering. You can design, script, and test complete pipelines on local hardware without incurring any GPU or API key charges.',
   },
   {
