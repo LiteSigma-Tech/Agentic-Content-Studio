@@ -12,6 +12,7 @@ end-to-end offline (richness scales with the LLM you plug in).
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,12 +31,24 @@ class StageContext:
     media_dir: Path
 
 
+# --- Prompt loader -----------------------------------------------------------
+# All prompts are overridable via environment variables so they can be tuned
+# without touching source code.  Set the corresponding env var in .env and the
+# pipeline picks it up on next startup.  Templates that contain {placeholders}
+# are still formatted at call-time with runtime values.
+
+def _env_prompt(key: str, default: str) -> str:
+    """Return the env var value if non-empty, otherwise the hardcoded default."""
+    val = os.environ.get(key, "")
+    return val if val.strip() else default
+
+
 # --- LLM prompt enricher ----------------------------------------------------
 # One short LLM call converts a template string into a richer, modality-specific
 # prompt before it reaches the image/video/music model.  Falls back to the
 # original string on any failure so the pipeline stays non-blocking.
 
-_ENRICH_IMAGE = """\
+_ENRICH_IMAGE = _env_prompt("PROMPT_ENRICH_IMAGE", """\
 You are an expert prompt engineer for photorealistic AI image models (FLUX, Stable Diffusion).
 Rewrite the prompt below to be richer and more precise. Add:
 - Exact camera framing (e.g. "medium close-up, 50mm lens")
@@ -44,17 +57,80 @@ Rewrite the prompt below to be richer and more precise. Add:
 - Surface textures and depth-of-field details
 - Any cinematic or photographic terminology that improves realism
 Preserve every character name, physical description, and the core scene intent exactly.
-Output ONLY the enhanced prompt — no preamble, no explanation, no quotes."""
+CRITICAL: End with "No text, no watermarks, no captions, no subtitles, no labels, no logos."
+Output ONLY the enhanced prompt — no preamble, no explanation, no quotes.""")
 
-_ENRICH_VIDEO = """\
+_ENRICH_VIDEO = _env_prompt("PROMPT_ENRICH_VIDEO", """\
 You are an expert prompt engineer for AI video generation models.
-Rewrite the prompt below to be richer and more cinematic. Add:
-- Camera movement (e.g. "slow push-in", "handheld pan left")
-- How subjects move and interact during the shot
-- Lighting changes or atmospheric dynamics over time
-- Pacing and energy (e.g. "urgent pace", "languid and dreamy")
-Keep it under 120 words.
-Output ONLY the enhanced prompt — no preamble, no explanation, no quotes."""
+You will receive a scene description. Your job is to PRESERVE every narrative detail and ADD a concise cinematic layer on top.
+
+Rules — strictly follow all of them:
+1. Keep EVERY original detail: who is present, what they do, where they are, props, mood.
+2. Do NOT summarise, compress, or omit any original content.
+3. ADD only: one specific camera movement, how characters physically move, one atmospheric/lighting note.
+4. Additions should be brief — one sentence each at most.
+5. End the output with "No text, no watermarks, no captions, no subtitles."
+6. Output ONLY the enhanced prompt — no preamble, no labels, no quotes.""")
+
+_NO_TEXT = _env_prompt(
+    "PROMPT_NO_TEXT",
+    "No text, no watermarks, no captions, no subtitles, no labels, no logos.",
+)
+
+# --- Script-writing prompt templates ----------------------------------------
+# Static parts are env-loadable; templates with {placeholders} are formatted
+# at call-time so runtime values (genre, style_prompt, etc.) are injected then.
+
+_CHAR_EXAMPLE = _env_prompt("PROMPT_CHAR_EXAMPLE", (
+    '"Maya is a sharp 34-year-old South Asian woman, 5\'6" with a lean runner\'s build. '
+    "She has thick black hair cut in a blunt jaw-length bob. Dark brown eyes behind square "
+    "tortoiseshell glasses. She wears a tailored burgundy blazer over a white fitted shirt, "
+    "high-waisted charcoal trousers, and block-heel ankle boots. A silver watch on her left "
+    'wrist. Precise and guarded — she rarely smiles first but when she does it transforms her face."'
+))
+
+_SHOT_EXAMPLE = _env_prompt("PROMPT_SHOT_EXAMPLE", (
+    '"A cluttered open-plan kitchen, mid-morning. Pale winter light floods through a large window '
+    "above the sink, casting long soft shadows across white subway tiles and a worn oak island. "
+    "Maya stands at the counter gripping a coffee mug with both hands, back half-turned to the room. "
+    "Jamie leans against the refrigerator, arms crossed, watching. The space between them feels "
+    "charged — a single dirty plate in the sink the only sign of last night. "
+    'Camera holds in a wide two-shot; the empty island between them feels enormous."'
+))
+
+# Supports placeholders: {min_char_desc}, {char_example}, {min_shot_desc}, {shot_example}, {style_prompt}
+_DETAIL_RULES_TMPL = _env_prompt("PROMPT_DETAIL_RULES", (
+    "DETAIL STANDARDS — enforced by an automated quality gate:\n\n"
+    "CHARACTER descriptions must be ≥{min_char_desc} characters (~35 words) and cover ALL of:\n"
+    "  age · body type · hair (colour, length, texture) · skin tone · facial features\n"
+    "  full outfit (every garment + footwear) · one memorable distinguishing detail · personality\n"
+    "  Example of a PASSING description: {char_example}\n\n"
+    "SHOT descriptions must be ≥{min_shot_desc} characters (~55 words, 4-6 sentences) covering ALL of:\n"
+    "  location name + set details (furniture, props, decor) · lighting quality+direction+colour-temp\n"
+    "  camera framing (e.g. 'tight two-shot', 'wide establishing') · precise character positions\n"
+    "  the specific action · emotional atmosphere\n"
+    "  Example of a PASSING description: {shot_example}\n\n"
+    "Visual style for ALL shots: {style_prompt}\n"
+))
+
+_DIALOGUE_RULES = _env_prompt("PROMPT_DIALOGUE_RULES", (
+    "DIALOGUE RULES — mandatory:\n"
+    "  • Characters must have REAL first names (e.g. Alex, Jamie, Dr. Chen).\n"
+    "    NEVER use 'Speaker', 'Voiceover', 'Narrator', 'Host', or 'Presenter'.\n"
+    "  • Dialogue is CONVERSATIONAL — characters respond, question, disagree, laugh, react.\n"
+    "    No monologues longer than 2 sentences. Each dialogue shot needs ≥2 characters.\n"
+    "  • Lines must sound like real speech, not scripted voiceover.\n"
+))
+
+# Preambles for the two write_script paths (adapt existing vs create from scratch).
+_SCRIPT_ADAPT_PREAMBLE = _env_prompt("PROMPT_SCRIPT_ADAPT_PREAMBLE", (
+    "You are a senior TV writer adapting source material into a detailed episode JSON "
+    "for an AI video pipeline."
+))
+
+_SCRIPT_CREATE_PREAMBLE = _env_prompt("PROMPT_SCRIPT_CREATE_PREAMBLE", (
+    "You are a professional TV writer creating a fully realised episode for an AI video pipeline."
+))
 
 
 def _enrich_prompt(ctx: StageContext, raw: str, modality: str = "image") -> str:
@@ -68,7 +144,8 @@ def _enrich_prompt(ctx: StageContext, raw: str, modality: str = "image") -> str:
         )
         enriched = res.text.strip().strip('"').strip("'")
         # Discard if the model returned something suspiciously short or refused
-        return enriched if len(enriched) > 40 else raw
+        enriched = enriched if len(enriched) > 40 else raw
+        return f"{enriched} {_NO_TEXT}"
     except Exception:
         return raw
 
@@ -193,61 +270,40 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
         '"seconds":5,"characters":["..."],"dialogue":[{"character":"...","text":"..."}]}]}]}'
     )
 
-    _char_example = (
-        '"Maya is a sharp 34-year-old South Asian woman, 5\'6" with a lean runner\'s build. '
-        "She has thick black hair cut in a blunt jaw-length bob. Dark brown eyes behind square "
-        "tortoiseshell glasses. She wears a tailored burgundy blazer over a white fitted shirt, "
-        "high-waisted charcoal trousers, and block-heel ankle boots. A silver watch on her left "
-        'wrist. Precise and guarded — she rarely smiles first but when she does it transforms her face."'
+    _detail_rules = _DETAIL_RULES_TMPL.format(
+        min_char_desc=_MIN_CHAR_DESC,
+        char_example=_CHAR_EXAMPLE,
+        min_shot_desc=_MIN_SHOT_DESC,
+        shot_example=_SHOT_EXAMPLE,
+        style_prompt=tpl.style_prompt,
     )
+    _dialogue_rules = _DIALOGUE_RULES
 
-    _shot_example = (
-        '"A cluttered open-plan kitchen, mid-morning. Pale winter light floods through a large window '
-        "above the sink, casting long soft shadows across white subway tiles and a worn oak island. "
-        "Maya stands at the counter gripping a coffee mug with both hands, back half-turned to the room. "
-        "Jamie leans against the refrigerator, arms crossed, watching. The space between them feels "
-        "charged — a single dirty plate in the sink the only sign of last night. "
-        'Camera holds in a wide two-shot; the empty island between them feels enormous."'
-    )
+    # If the concept is already valid JSON matching our schema, use it directly.
+    if len(project.concept) > 300:
+        parsed_direct = _extract_json(project.concept)
+        if parsed_direct:
+            built_direct = _parse_episode(parsed_direct, project)
+            if built_direct and not _script_critique(*built_direct):
+                project.episode, project.characters = built_direct
+                project.script_prompt = "passthrough — concept parsed directly as JSON"
+                return "local/passthrough", 0.0
 
-    _detail_rules = (
-        f"DETAIL STANDARDS — enforced by an automated quality gate:\n\n"
-        f"CHARACTER descriptions must be ≥{_MIN_CHAR_DESC} characters (~35 words) and cover ALL of:\n"
-        f"  age · body type · hair (colour, length, texture) · skin tone · facial features\n"
-        f"  full outfit (every garment + footwear) · one memorable distinguishing detail · personality\n"
-        f"  Example of a PASSING description: {_char_example}\n\n"
-        f"SHOT descriptions must be ≥{_MIN_SHOT_DESC} characters (~55 words, 4-6 sentences) covering ALL of:\n"
-        f"  location name + set details (furniture, props, decor) · lighting quality+direction+colour-temp\n"
-        f"  camera framing (e.g. 'tight two-shot', 'wide establishing') · precise character positions\n"
-        f"  the specific action · emotional atmosphere\n"
-        f"  Example of a PASSING description: {_shot_example}\n\n"
-        f"Visual style for ALL shots: {tpl.style_prompt}\n"
-    )
-
-    _dialogue_rules = (
-        "DIALOGUE RULES — mandatory:\n"
-        "  • Characters must have REAL first names (e.g. Alex, Jamie, Dr. Chen).\n"
-        "    NEVER use 'Speaker', 'Voiceover', 'Narrator', 'Host', or 'Presenter'.\n"
-        "  • Dialogue is CONVERSATIONAL — characters respond, question, disagree, laugh, react.\n"
-        "    No monologues longer than 2 sentences. Each dialogue shot needs ≥2 characters.\n"
-        "  • Lines must sound like real speech, not scripted voiceover.\n"
-    )
-
-    # If concept is a detailed script (> 300 chars), adapt it into a conversation.
+    # Detailed source material: adapt faithfully, preserving existing structure and characters.
     if len(project.concept) > 300:
         prompt = (
-            f"You are a senior TV writer adapting source material into a detailed episode JSON "
-            f"for an AI video pipeline.\n"
+            f"{_SCRIPT_ADAPT_PREAMBLE}\n"
             f"Genre: {project.genre.value}. Tone: {tpl.tone}. Safety: {tpl.safety_notes}\n\n"
             f"SOURCE MATERIAL:\n{project.concept}\n\n"
             "Complete ALL three tasks in full before outputting JSON:\n\n"
-            "TASK 1 — CHARACTERS: Invent 2-3 named characters (real first names only) who will "
-            "DISCUSS the topic. Give each a contrasting role that creates natural tension "
-            "(e.g. sceptic vs enthusiast, student vs expert). "
-            "Write a FULL physical description for each — see DETAIL STANDARDS below.\n\n"
-            "TASK 2 — SHOTS: Adapt the content into 8-10 shots across 2-3 DISTINCT scenes "
-            "(different locations). Each shot: full visual description + back-and-forth dialogue. "
-            "See DETAIL STANDARDS and DIALOGUE RULES below.\n\n"
+            "TASK 1 — CHARACTERS: Preserve all named characters from the source material "
+            "exactly as written. If none are defined, create 2-3 named characters (real first "
+            "names only) with contrasting roles. Write a FULL physical description for each "
+            "— see DETAIL STANDARDS below.\n\n"
+            "TASK 2 — SHOTS: Convert the source material faithfully into 8-10 shots across "
+            "2-3 DISTINCT scenes (different locations). Maintain the original narrative order "
+            "and character names; expand descriptions to meet DETAIL STANDARDS below. "
+            "Keep existing dialogue where present; add back-and-forth exchanges where missing.\n\n"
             + _detail_rules + "\n"
             + _dialogue_rules +
             "\nTASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
@@ -255,7 +311,7 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
         )
     else:
         prompt = (
-            f"You are a professional TV writer creating a fully realised episode for an AI video pipeline.\n"
+            f"{_SCRIPT_CREATE_PREAMBLE}\n"
             f"Genre: {project.genre.value}. Premise: {project.concept}\n"
             f"Tone: {tpl.tone}\n"
             f"Narrative beats (cover every one): {', '.join(tpl.beats)}.\n"
@@ -320,7 +376,8 @@ def design_characters(project: Project, ctx: StageContext) -> tuple[str, float]:
             continue
         desc = ch.description or f"{ch.name}, a character in '{project.title}'"
         override = project.prompt_overrides.get("design_characters", "")
-        base = f"Character reference sheet: {desc}. Style: {tpl.style_prompt}"
+        base = (f"Character reference sheet: {desc}. Style: {tpl.style_prompt}. "
+                f"Consistent appearance across all shots. {_NO_TEXT}")
         if override:
             base += f". Reviewer direction: {override}"
         enriched = _enrich_prompt(ctx, base, "image")
@@ -348,14 +405,16 @@ def generate_keyframes(project: Project, ctx: StageContext) -> tuple[str, float]
         else:
             char_details = "the cast"
         base = (f"{sh.description}. Characters present: {char_details}. "
-                f"Style: {project.style_prompt}")
+                f"Style: {project.style_prompt}. "
+                f"Character appearance must exactly match their description — same face, "
+                f"hair, outfit, no deviations. {_NO_TEXT}")
         override = project.prompt_overrides.get("generate_keyframes", "")
         if override:
             base += f". Reviewer direction: {override}"
         enriched = _enrich_prompt(ctx, base, "image")
-        # For single-character shots pass the reference sheet as init_image so
-        # the model can anchor appearance; skip for multi-character (complex).
-        init_img = char_ref.get(sh.characters[0]) if len(sh.characters) == 1 else None
+        # Pass first named character's reference as init_image so the model
+        # anchors on a consistent face/outfit across all shots.
+        init_img = char_ref.get(sh.characters[0]) if sh.characters else None
         sh.keyframe_prompt = enriched
         res = ctx.gw.image("default", enriched, init_image=init_img)
         sh.keyframe_uri, model, cost = res.uri, res.model_used, cost + res.cost_usd
@@ -388,8 +447,10 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
             char_details = ""
         base = sh.description
         if char_details:
-            base += f". Characters present: {char_details}"
-        base += f". Style: {project.style_prompt}"
+            base += (f". Characters present: {char_details}. "
+                     f"Maintain exact character appearance — same face, hair, and outfit "
+                     f"as established in prior shots, no changes.")
+        base += f". Style: {project.style_prompt}. {_NO_TEXT}"
         override = project.prompt_overrides.get("generate_clips", "")
         if override:
             base += f". Reviewer direction: {override}"

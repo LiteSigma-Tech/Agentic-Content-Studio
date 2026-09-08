@@ -11,6 +11,7 @@ this to enforce "free-only" routing.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -679,7 +680,7 @@ class WanVideoProvider:
     # ── shared payload builder ────────────────────────────────────────────────
     def _payload(self, prompt: str, seconds: float, init_image) -> dict:
         import base64, re
-        duration = 5 if seconds <= 6 else 8
+        duration = max(1, min(8, round(seconds)))
         # Strip on-screen text instructions that Wan cannot render legibly:
         # "POV: ...", "On-Screen Text: ...", "(Bold): ...", etc. These come from
         # social-media-style scripts and belong in the render/graphics layer.
@@ -697,11 +698,18 @@ class WanVideoProvider:
             "appear realistic but text on them need not be legible — "
             "focus on composition, lighting and motion over text readability."
         )
+        _default_neg = (
+            "static, motionless, no movement, freeze frame, still image, "
+            "blurry, low quality, distorted, watermark, text overlay, caption, "
+            "different face, different person, character change, inconsistent appearance"
+        )
         p: dict = {
             "prompt": clean + no_text_suffix,
+            "negative_prompt": os.environ.get("WAN_NEGATIVE_PROMPT", _default_neg),
             "duration": duration,
             "resolution": "720p",
             "num_inference_steps": int(os.environ.get("WAN_INFERENCE_STEPS") or 30),
+            "guidance_scale": float(os.environ.get("WAN_GUIDANCE_SCALE") or 7.0),
         }
         if init_image and Path(init_image).exists():
             p["init_image_b64"] = base64.b64encode(

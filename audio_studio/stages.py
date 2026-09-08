@@ -12,13 +12,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import os
+
 from video_studio.genres import template_for
 from video_studio.models import Project
 from video_studio.stages import StageContext
 
 from . import synth, voices
 
-_ENRICH_MUSIC = """\
+
+def _env_prompt(key: str, default: str) -> str:
+    val = os.environ.get(key, "")
+    return val if val.strip() else default
+
+
+_ENRICH_MUSIC = _env_prompt("PROMPT_ENRICH_MUSIC", """\
 You are an expert music supervisor writing briefs for an AI music generation model.
 Rewrite the prompt below into a detailed music brief. Specify:
 - Instrumentation (e.g. "acoustic guitar, sparse drums, warm bass")
@@ -26,7 +34,7 @@ Rewrite the prompt below into a detailed music brief. Specify:
 - Mood arc (e.g. "starts tentative, swells into confident resolution")
 - Production style (e.g. "lo-fi indie, dry room, close-mic'd")
 Keep it under 80 words.
-Output ONLY the enhanced brief — no preamble, no explanation, no quotes."""
+Output ONLY the enhanced brief — no preamble, no explanation, no quotes.""")
 
 
 def _enrich_music_prompt(ctx: StageContext, raw: str) -> str:
@@ -74,7 +82,6 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
         # One TTS call per Line so each character speaks in their own voice.
         line_paths: list[Path] = []
         line_chars: list[str] = []
-        secs_per_line = sh.seconds / max(1, len(sh.dialogue))
         for i, ln in enumerate(sh.dialogue):
             if not ln.text.strip():
                 continue
@@ -87,7 +94,7 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
             if synth.is_real_audio(res.uri):
                 synth._ff(["-i", res.uri, "-ac", "2", "-ar", str(synth._SR), str(line_dst)])
             else:
-                seconds = synth.estimate_speech_seconds(ln.text, secs_per_line)
+                seconds = synth.estimate_speech_seconds(ln.text)
                 synth.synth_speech(ln.text, voices.get(voice_id), seconds, line_dst)
             line_paths.append(line_dst)
             line_chars.append(ln.character)
@@ -102,6 +109,11 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
         dst = out_dir / f"dlg_{sh.id}.wav"
         synth.concat_audio(line_paths, dst, gaps_ms=gaps_ms)
         sh.dialogue_audio_uri = str(dst)
+        # Stretch sh.seconds to fit actual dialogue so generate_clips requests
+        # a clip that's long enough to cover what's being said.
+        actual = synth._audio_duration(str(dst))
+        if actual > sh.seconds:
+            sh.seconds = actual
     return model or "n/a", cost
 
 

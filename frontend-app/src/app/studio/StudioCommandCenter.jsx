@@ -37,7 +37,6 @@ import {
 import { STAGES, SignalChain, StageReviewBanner } from "../shared/pipeline";
 import { ACTIVE_PROJECT_KEY } from "../library/AllEpisodes";
 
-const GENRES = ["kids_cartoon", "brand_explainer", "drama", "comedy"];
 
 export default function StudioCommandCenter() {
   const qc = useQueryClient();
@@ -56,6 +55,12 @@ export default function StudioCommandCenter() {
   const [concept, setConcept] = useState("");
   const [genre, setGenre] = useState("kids_cartoon");
   const [reviewMode, setReviewMode] = useState(false);
+
+  const { data: genres = [] } = useQuery({
+    queryKey: ["genres"],
+    queryFn: studioApiCalls.getGenres,
+    staleTime: Infinity,
+  });
   const [createError, setCreateError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [actionError, setActionError] = useState(null);
@@ -207,6 +212,14 @@ export default function StudioCommandCenter() {
     }
   }
 
+  function handleApproveStage(id, stage, note) {
+    approve.mutate({ id, stage, note });
+  }
+
+  function handleRejectStage(id, stage, promptOverride, note) {
+    reject.mutate({ id, stage, promptOverride, note });
+  }
+
   // Resume pipeline action
   async function handleResume(id) {
     setActionError(null);
@@ -356,8 +369,8 @@ export default function StudioCommandCenter() {
                       font: `500 12px/1 ${mono}`,
                     }}
                   >
-                    {GENRES.map((g) => (
-                      <option key={g} value={g}>{g}</option>
+                    {genres.map((g) => (
+                      <option key={g.value} value={g.value}>{g.label}</option>
                     ))}
                   </select>
 

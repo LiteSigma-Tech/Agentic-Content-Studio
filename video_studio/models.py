@@ -23,6 +23,21 @@ class Genre(str, Enum):
     romance = "romance"
     comedy = "comedy"
     kids_cartoon = "kids_cartoon"
+    thriller = "thriller"
+    # horror = "horror"
+    sci_fi = "sci_fi"
+    # fantasy = "fantasy"
+    action = "action"
+    documentary = "documentary"
+    # mystery = "mystery"
+    musical = "musical"
+    crime = "crime"
+    western = "western"
+    historical = "historical"
+    sitcom = "sitcom"
+    reality_tv = "reality_tv"
+    educational = "educational"
+    animation = "animation"
 
 
 class StageStatus(str, Enum):
