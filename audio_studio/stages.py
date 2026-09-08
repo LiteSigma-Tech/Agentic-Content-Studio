@@ -109,11 +109,20 @@ def generate_dialogue(project: Project, ctx: StageContext) -> tuple[str, float]:
         dst = out_dir / f"dlg_{sh.id}.wav"
         synth.concat_audio(line_paths, dst, gaps_ms=gaps_ms)
         sh.dialogue_audio_uri = str(dst)
-        # Stretch sh.seconds to fit actual dialogue so generate_clips requests
-        # a clip that's long enough to cover what's being said.
         actual = synth._audio_duration(str(dst))
         if actual > sh.seconds:
-            sh.seconds = actual
+            ratio = actual / sh.seconds
+            if ratio <= 2.0:
+                # Speed up audio to fit the planned shot duration.
+                # atempo up to 2.0× is supported; ≤1.4× is imperceptible.
+                sped = out_dir / f"dlg_{sh.id}_sped.wav"
+                synth._ff(["-i", str(dst), "-filter:a", f"atempo={ratio:.4f}",
+                           "-ar", str(synth._SR), "-ac", "2", str(sped)])
+                sped.replace(dst)
+            else:
+                # Dialogue is more than 2× the planned duration — expand the shot
+                # rather than compress speech to unintelligible speed.
+                sh.seconds = actual
     return model or "n/a", cost
 
 

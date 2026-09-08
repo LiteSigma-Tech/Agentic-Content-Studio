@@ -37,6 +37,143 @@ import {
 import { STAGES, SignalChain, StageReviewBanner } from "../shared/pipeline";
 import { ACTIVE_PROJECT_KEY } from "../library/AllEpisodes";
 
+// ── Stage output preview ──────────────────────────────────────────────────────
+function StageOutputPreview({ stage, project }) {
+  const shots = project?.episode?.scenes?.flatMap(sc => sc.shots) ?? [];
+  const mediaUrl = studioApiCalls.mediaUrl;
+
+  const wrap = (children) => (
+    <div style={{ marginTop: 14, borderTop: `1px solid ${T.line2}`, paddingTop: 12 }}>
+      {children}
+    </div>
+  );
+
+  const imgGrid = (items) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+      {items.map(({ label, uri }) => uri && (
+        <div key={label} style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+          <img
+            src={mediaUrl(uri)} alt={label}
+            style={{ width: 140, height: 90, objectFit: "cover", borderRadius: T.radiusMd, border: `1px solid ${T.line2}` }}
+          />
+          <span style={{ font: `400 10px/1 ${mono}`, color: T.faint }}>{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const audioRow = (label, uri) => uri && (
+    <div key={label} style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+      <span style={{ font: `500 11px/1 ${mono}`, color: T.faint, minWidth: 100 }}>{label}</span>
+      <audio controls src={mediaUrl(uri)} style={{ height: 28, flex: 1, minWidth: 0 }} />
+    </div>
+  );
+
+  if (stage === "write_script") {
+    const ep = project?.episode;
+    if (!ep?.scenes?.length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No script output found.</span>);
+    return wrap(
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {shots.map(sh => (
+          <div key={sh.id} style={{ padding: "8px 10px", background: T.ink, borderRadius: T.radiusMd, border: `1px solid ${T.line2}` }}>
+            <div style={{ font: `600 11px/1 ${mono}`, color: T.paper, marginBottom: 4 }}>{sh.id}</div>
+            <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>{sh.description?.slice(0, 160)}…</div>
+            {sh.dialogue?.length > 0 && (
+              <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+                {sh.dialogue.map((ln, i) => (
+                  <div key={i} style={{ font: `400 10px/1.4 ${mono}`, color: T.teal }}>
+                    <strong>{ln.character}:</strong> {ln.text}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (stage === "design_characters") {
+    const chars = project?.characters ?? [];
+    if (!chars.length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No character designs found.</span>);
+    return wrap(imgGrid(chars.map(ch => ({ label: ch.name, uri: ch.reference_uri }))));
+  }
+
+  if (stage === "generate_keyframes") {
+    const items = shots.map(sh => ({ label: sh.id, uri: sh.keyframe_uri })).filter(x => x.uri);
+    if (!items.length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No keyframes found.</span>);
+    return wrap(imgGrid(items));
+  }
+
+  if (stage === "cast_voices") {
+    const cast = project?.voice_cast ?? {};
+    const entries = Object.entries(cast);
+    if (!entries.length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No voice cast found.</span>);
+    return wrap(
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+        {entries.map(([char, voice]) => (
+          <div key={char} style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>
+            <strong style={{ color: T.paper }}>{char}</strong> → {voice}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (stage === "generate_dialogue") {
+    const rows = shots.filter(sh => sh.dialogue_audio_uri).map(sh => audioRow(sh.id, sh.dialogue_audio_uri));
+    if (!rows.filter(Boolean).length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No dialogue audio found.</span>);
+    return wrap(<div>{rows}</div>);
+  }
+
+  if (stage === "generate_music") {
+    if (!project?.music_uri) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No music track found.</span>);
+    return wrap(audioRow("Music bed", project.music_uri));
+  }
+
+  if (stage === "generate_clips") {
+    const clips = shots.filter(sh => sh.clip_uri);
+    if (!clips.length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No clips found.</span>);
+    return wrap(
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+        {clips.map(sh => (
+          <div key={sh.id} style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+            <video
+              src={mediaUrl(sh.clip_uri)} controls
+              style={{ width: 180, height: 110, objectFit: "cover", borderRadius: T.radiusMd, border: `1px solid ${T.line2}` }}
+            />
+            <span style={{ font: `400 10px/1 ${mono}`, color: T.faint }}>{sh.id}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (stage === "mix_audio") {
+    if (!project?.master_audio_uri) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No master audio found.</span>);
+    return wrap(audioRow("Master mix", project.master_audio_uri));
+  }
+
+  if (stage === "render" || stage === "assemble") {
+    const uri = project?.final_uri;
+    if (!uri) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No rendered video found.</span>);
+    return wrap(
+      <video controls src={mediaUrl(uri)}
+        style={{ width: "100%", maxHeight: 260, borderRadius: T.radiusMd, background: "#000", marginTop: 8 }} />
+    );
+  }
+
+  if (stage === "mux") {
+    const uri = project?.final_av_uri;
+    if (!uri) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No final AV output found.</span>);
+    return wrap(
+      <video controls src={mediaUrl(uri)}
+        style={{ width: "100%", maxHeight: 260, borderRadius: T.radiusMd, background: "#000", marginTop: 8 }} />
+    );
+  }
+
+  return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No preview available for this stage.</span>);
+}
 
 export default function StudioCommandCenter() {
   const qc = useQueryClient();
@@ -66,6 +203,7 @@ export default function StudioCommandCenter() {
   const [actionError, setActionError] = useState(null);
   const [resumingId, setResumingId] = useState(null);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [rerunStage, setRerunStage] = useState("");
 
   // Top level projects list
   const { data: projectsData, error: listError } = useQuery({
@@ -136,6 +274,15 @@ export default function StudioCommandCenter() {
 
   const reject = useMutation({
     mutationFn: ({ id, stage, promptOverride, note }) => studioApiCalls.rejectStage(id, stage, promptOverride, note),
+    onSuccess: () => {
+      qc.invalidateQueries(["studio-command-center-projects"]);
+      if (selectedId) qc.invalidateQueries(["studio-command-center-project", selectedId]);
+    },
+  });
+
+  const forceRerun = useMutation({
+    mutationFn: ({ id, stage }) =>
+      studioApiCalls.runProject(id, { force_from: stage, background: true }),
     onSuccess: () => {
       qc.invalidateQueries(["studio-command-center-projects"]);
       if (selectedId) qc.invalidateQueries(["studio-command-center-project", selectedId]);
@@ -550,6 +697,51 @@ export default function StudioCommandCenter() {
                 onReject={(stage, promptOverride, note) => handleRejectStage(project.id, stage, promptOverride, note)}
                 disabled={approve.isPending || reject.isPending}
               />
+            )}
+
+            {/* Re-run from stage — available for any selected project */}
+            {project && !isProjectRunning && (
+              <Panel style={{ padding: 14, border: `1px solid ${T.line2}` }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <RotateCcw size={13} color={T.faint} />
+                    <Eyebrow>Regenerate from stage</Eyebrow>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <select
+                      value={rerunStage}
+                      onChange={(e) => setRerunStage(e.target.value)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: T.radiusMd,
+                        background: T.ink,
+                        border: `1px solid ${T.line2}`,
+                        color: rerunStage ? T.paper : T.faint,
+                        font: `500 12px/1 ${mono}`,
+                      }}
+                    >
+                      <option value="">Pick a stage…</option>
+                      {STAGES.map(([label, , name]) => (
+                        <option key={name} value={name}>{label}</option>
+                      ))}
+                    </select>
+                    <Btn
+                      kind="danger"
+                      icon={RotateCcw}
+                      disabled={!rerunStage || forceRerun.isPending}
+                      onClick={() => {
+                        if (rerunStage) forceRerun.mutate({ id: project.id, stage: rerunStage });
+                      }}
+                    >
+                      {forceRerun.isPending ? "Queuing…" : "Re-run from here"}
+                    </Btn>
+                  </div>
+                </div>
+
+                {/* Previous output preview for selected stage */}
+                {rerunStage && <StageOutputPreview stage={rerunStage} project={project} />}
+              </Panel>
             )}
 
             {/* Two-Column Workspace Layout */}

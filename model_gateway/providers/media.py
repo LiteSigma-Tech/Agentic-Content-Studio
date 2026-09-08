@@ -686,7 +686,11 @@ class WanVideoProvider:
         # social-media-style scripts and belong in the render/graphics layer.
         clean = re.sub(
             r'(?i)(pov\s*:|on.?screen\s+text\s*[:\(]?|caption\s*:|'
-            r'bold\s+text\s*:|title\s+card\s*:)[^.]*\.?', '', prompt)
+            r'bold\s+text\s*:|title\s+card\s*:|call[\s\-]+to[\s\-]+action\s*[:\(]?|'
+            r'cta\s*:|headline\s*:|typography\s*:|url\s*:|apply\s+now\s*[:\(]?|'
+            r'sign[\s\-]+up\s*[:\(]?|display\s+text\s*[:\(]?|'
+            r'text\s+reads?\s*[:\(]?|the\s+text\s+.{0,20}appears?\s*[:\(]?)'
+            r'[^.]*\.?', '', prompt)
         clean = re.sub(r'\s{2,}', ' ', clean).strip()
 
         # Suppress overlay text; allow scene text (screens, docs) to be
@@ -700,8 +704,14 @@ class WanVideoProvider:
         )
         _default_neg = (
             "static, motionless, no movement, freeze frame, still image, "
-            "blurry, low quality, distorted, watermark, text overlay, caption, "
-            "different face, different person, character change, inconsistent appearance"
+            "blurry, low quality, distorted, watermark, "
+            "text overlay, caption, subtitle, readable letters, legible words, "
+            "url text, call to action card, logo text, typography card, intertitle, "
+            "floating characters, characters hovering, disconnected limbs, "
+            "extra people, uninvited crowd, background strangers, unexpected characters, "
+            "different face, different person, character change, inconsistent appearance, "
+            "overexposed, blown highlights, harsh glare, lens flare, "
+            "specular reflections, washed out, overly bright, blown out skin"
         )
         p: dict = {
             "prompt": clean + no_text_suffix,
@@ -780,9 +790,9 @@ class WanVideoProvider:
                         f"Wan/RunPod: no video_url in output: {d.get('output')}")
                 with httpx.Client(timeout=120) as dl_client:
                     return self._download(dl_client, video_url)
-            if status in ("FAILED", "ERROR"):
-                raise ProviderError(f"Wan/RunPod job failed: {d.get('error', d)}")
-        raise ProviderError("Wan/RunPod: timed out after 10 min")
+            if status in ("FAILED", "ERROR", "CANCELLED", "TIMED_OUT"):
+                raise ProviderError(f"Wan/RunPod job {status.lower()}: {d.get('error', d)}")
+        raise ProviderError("Wan/RunPod: timed out after 20 min")
 
     # ── public interface ──────────────────────────────────────────────────────
     def generate(self, prompt, *, seconds=5.0, fps=24, init_image=None) -> MediaAsset:
@@ -799,6 +809,223 @@ class WanVideoProvider:
             raise
         except Exception as e:
             raise ProviderError(f"Wan/{self._backend} call failed: {e}") from e
+
+
+# --- WAN 2.2 via wlsdml1114 ComfyUI RunPod endpoint -------------------------
+#
+# Uses the ComfyUI-WanVideoWrapper (kijai) workflow rather than the diffusers
+# pipeline.  Key advantages over WanVideoProvider:
+#   - ComfyUI scheduler control (dpm++, euler, etc.)
+#   - Native negative_prompt + cfg passthrough
+#   - LoRA support (up to 3 pairs via WAN_COMFYUI_LORA_PAIRS JSON env var)
+#   - Video returned as base64 in the job output (no S3 required)
+#
+# .env:
+#   RUNPOD_WAN_COMFYUI_ENDPOINT_ID  — serverless endpoint from wlsdml1114 template
+#   WAN_COMFYUI_CFG                 — cfg scale (default 6.0)
+#   WAN_COMFYUI_STEPS               — denoising steps (default 20)
+#   WAN_COMFYUI_LORA_PAIRS          — JSON array, e.g.
+#     [{"high":"motion_high.safetensors","low":"motion_low.safetensors",
+#       "high_weight":1.0,"low_weight":1.0}]
+#   WAN_NEGATIVE_PROMPT             — shared with WanVideoProvider
+
+class WanComfyUIProvider:
+    """Wan 2.2 TI2V via the ComfyUI serverless endpoint (wlsdml1114/generate_video)."""
+
+    _RUNPOD_API = "https://api.runpod.ai/v2"
+
+    def __init__(self, runpod_key: str, endpoint_id: str):
+        self._runpod_key  = runpod_key
+        self._endpoint_id = endpoint_id
+        self.model_id        = "wan/comfyui"
+        self.capabilities    = {Cap.IMAGE_INIT, Cap.MODERATION_OK}
+        self.est_cost_usd    = 0.02
+        self.est_latency_s   = 90.0
+        self.quality         = 9
+
+    def _clean_prompt(self, prompt: str) -> str:
+        import re
+        clean = re.sub(
+            r'(?i)(pov\s*:|on.?screen\s+text\s*[:\(]?|caption\s*:|'
+            r'bold\s+text\s*:|title\s+card\s*:|call[\s\-]+to[\s\-]+action\s*[:\(]?|'
+            r'cta\s*:|headline\s*:|typography\s*:|url\s*:|apply\s+now\s*[:\(]?|'
+            r'sign[\s\-]+up\s*[:\(]?|display\s+text\s*[:\(]?|'
+            r'text\s+reads?\s*[:\(]?|the\s+text\s+.{0,20}appears?\s*[:\(]?)'
+            r'[^.]*\.?', '', prompt)
+        return re.sub(r'\s{2,}', ' ', clean).strip()
+
+    def _payload(self, prompt: str, seconds: float, init_image) -> dict:
+        import base64, json, random
+        _default_neg = (
+            "static, motionless, no movement, freeze frame, still image, "
+            "blurry, low quality, distorted, watermark, "
+            "text overlay, caption, subtitle, readable letters, legible words, "
+            "floating characters, characters hovering, disconnected limbs, "
+            "extra people, uninvited crowd, unexpected characters, "
+            "different face, different person, character change, inconsistent appearance, "
+            "overexposed, blown highlights, harsh glare, lens flare, "
+            "specular reflections, washed out, overly bright"
+        )
+        duration = max(1, min(8, round(seconds)))
+        length   = duration * 16 + 1          # Wan internal fps = 16
+
+        lora_raw = os.environ.get("WAN_COMFYUI_LORA_PAIRS", "[]")
+        try:
+            lora_pairs = json.loads(lora_raw)
+        except Exception:
+            lora_pairs = []
+
+        # wlsdml1114 template defaults to portrait (480×832). Use env vars to
+        # override if the network volume has models supporting other resolutions.
+        width  = int(os.environ.get("WAN_COMFYUI_WIDTH")  or 480)
+        height = int(os.environ.get("WAN_COMFYUI_HEIGHT") or 832)
+        p: dict = {
+            "prompt":          self._clean_prompt(prompt),
+            "negative_prompt": os.environ.get("WAN_NEGATIVE_PROMPT", _default_neg),
+            "width":           width,
+            "height":          height,
+            "length":          length,
+            "steps":           int(os.environ.get("WAN_COMFYUI_STEPS") or 20),
+            "cfg":             float(os.environ.get("WAN_COMFYUI_CFG") or 6.0),
+            "seed":            random.randint(0, 2 ** 32 - 1),
+            "context_overlap": 16,
+        }
+        if lora_pairs:
+            p["lora_pairs"] = lora_pairs
+        if init_image and Path(init_image).exists():
+            # Upload keyframe to S3 and pass URL — avoids base64 payload size issues.
+            try:
+                import boto3 as _boto3, uuid as _uuid, mimetypes as _mt
+                _s3 = _boto3.client("s3")
+                _bucket = os.environ.get("S3_BUCKET", "")
+                _prefix = os.environ.get("S3_PREFIX", "wan-outputs").rstrip("/")
+                _key = f"{_prefix}/keyframes/{_uuid.uuid4().hex}.jpg"
+                # Convert PNG keyframe to JPEG before upload
+                from PIL import Image as _PIL
+                import io as _io
+                img = _PIL.open(init_image).convert("RGB")
+                img.thumbnail((512, 512), _PIL.LANCZOS)
+                buf = _io.BytesIO()
+                img.save(buf, format="JPEG", quality=85)
+                buf.seek(0)
+                _s3.upload_fileobj(buf, _bucket, _key,
+                                   ExtraArgs={"ContentType": "image/jpeg"})
+                _expires = int(os.environ.get("S3_URL_EXPIRES", "3600"))
+                url = _s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": _bucket, "Key": _key},
+                    ExpiresIn=_expires)
+                p["image_url"] = url
+            except Exception as _e:
+                print(f"[wan/comfyui] keyframe upload failed, skipping init_image: {_e}")
+        return p
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._runpod_key}",
+                "Content-Type": "application/json"}
+
+    def _submit_job(self, payload: dict) -> str:
+        """Submit one job to RunPod and return the job ID immediately."""
+        with httpx.Client(timeout=60) as c:
+            r = c.post(f"{self._RUNPOD_API}/{self._endpoint_id}/run",
+                       json={"input": payload}, headers=self._headers())
+        if r.status_code == 401:
+            raise ProviderError("WanComfyUI: invalid API key")
+        if r.status_code not in (200, 201):
+            raise ProviderError(
+                f"WanComfyUI submit failed ({r.status_code}): {r.text[:300]}")
+        job_id = r.json().get("id", "")
+        if not job_id:
+            raise ProviderError("WanComfyUI: no job ID in response")
+        return job_id
+
+    def _poll_job(self, job_id: str) -> str:
+        """Poll a submitted RunPod job until complete, return local file URI."""
+        import base64, time
+        deadline = time.time() + 1200
+        poll_url = f"{self._RUNPOD_API}/{self._endpoint_id}/status/{job_id}"
+        while time.time() < deadline:
+            time.sleep(10)
+            with httpx.Client(timeout=30) as c:
+                d = c.get(poll_url, headers=self._headers()).json()
+            status  = d.get("status", "")
+            elapsed = int(time.time() - (deadline - 1200))
+            print(f"[wan/comfyui] job {job_id[:8]}… status={status} t+{elapsed}s")
+            if status == "COMPLETED":
+                video_b64 = (d.get("output") or {}).get("video", "")
+                if not video_b64:
+                    raise ProviderError(
+                        f"WanComfyUI: no video in output: {d.get('output')}")
+                if "," in video_b64:
+                    video_b64 = video_b64.split(",", 1)[1]
+                return _stub_file(".mp4", base64.b64decode(video_b64))
+            if status in ("FAILED", "ERROR", "CANCELLED", "TIMED_OUT"):
+                raise ProviderError(f"WanComfyUI job {status.lower()}: {d.get('error', d)}")
+        raise ProviderError("WanComfyUI: timed out after 20 min")
+
+    def generate(self, prompt, *, seconds=5.0, fps=24, init_image=None) -> MediaAsset:
+        payload = self._payload(prompt, seconds, init_image)
+        try:
+            uri = self._poll_job(self._submit_job(payload))
+            return MediaAsset(uri=uri, mime="video/mp4",
+                              model_id=self.model_id,
+                              cost_usd=self.est_cost_usd)
+        except ProviderError:
+            raise
+        except Exception as e:
+            raise ProviderError(f"WanComfyUI call failed: {e}") from e
+
+    def generate_batch(
+        self,
+        items: "list[tuple[str, float, str | None]]",
+    ) -> "list[MediaAsset | Exception]":
+        """Submit all jobs immediately, then poll all concurrently.
+
+        RunPod auto-scales one worker per queued job, so submitting N shots
+        at once takes the same wall-clock time as 1 shot instead of N × 1.
+
+        Returns a list parallel to `items`; each entry is either a MediaAsset
+        or an Exception (so one failure doesn't abort the rest).
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Phase 1 — submit all jobs before any polling starts.
+        job_ids: list[str | Exception] = []
+        for prompt, seconds, init_image in items:
+            try:
+                jid = self._submit_job(self._payload(prompt, seconds, init_image))
+                print(f"[wan/comfyui] submitted job {jid[:8]}…")
+                job_ids.append(jid)
+            except Exception as e:
+                job_ids.append(e)
+
+        # Phase 2 — poll all submitted jobs in parallel.
+        results: list[MediaAsset | Exception] = [Exception("not started")] * len(items)
+        poll_map = {jid: i for i, jid in enumerate(job_ids) if isinstance(jid, str)}
+
+        def _poll_one(jid: str) -> tuple[str, str]:
+            return jid, self._poll_job(jid)
+
+        with ThreadPoolExecutor(max_workers=len(poll_map) or 1) as pool:
+            futures = {pool.submit(_poll_one, jid): jid for jid in poll_map}
+            for fut in as_completed(futures):
+                jid = futures[fut]
+                idx = poll_map[jid]
+                try:
+                    _, uri = fut.result()
+                    results[idx] = MediaAsset(
+                        uri=uri, mime="video/mp4",
+                        model_id=self.model_id,
+                        cost_usd=self.est_cost_usd)
+                except Exception as e:
+                    results[idx] = e
+
+        # Fill slots where submission itself failed.
+        for i, jid in enumerate(job_ids):
+            if isinstance(jid, Exception):
+                results[i] = jid
+
+        return results
 
 
 # --- GOOGLE IMAGEN via Gemini API (free tier) --------------------------------

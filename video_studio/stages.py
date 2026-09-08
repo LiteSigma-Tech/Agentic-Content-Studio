@@ -120,6 +120,17 @@ _DIALOGUE_RULES = _env_prompt("PROMPT_DIALOGUE_RULES", (
     "  • Dialogue is CONVERSATIONAL — characters respond, question, disagree, laugh, react.\n"
     "    No monologues longer than 2 sentences. Each dialogue shot needs ≥2 characters.\n"
     "  • Lines must sound like real speech, not scripted voiceover.\n"
+    "  • Keep each line under 12 words so it fits within the shot's 'seconds' budget.\n"
+))
+
+_SHOT_DURATION_RULES = _env_prompt("PROMPT_SHOT_DURATION_RULES", (
+    "SHOT DURATION RULES — enforced by code:\n"
+    "  • The 'seconds' field for every shot MUST be between 4 and 8 (hard limits).\n"
+    "  • At 150 wpm a speaker delivers ~2.5 words/second. "
+    "A 5-second shot fits ~12 words of dialogue across ALL characters combined.\n"
+    "  • Never write more words of dialogue than the 'seconds' value × 2.5 allows.\n"
+    "  • Do NOT create 'call to action', 'logo card', or 'title card' shots — "
+    "graphic overlays are added in post and cannot be rendered by the video model.\n"
 ))
 
 # Preambles for the two write_script paths (adapt existing vs create from scratch).
@@ -200,11 +211,13 @@ def _parse_episode(data: dict, project: Project) -> tuple[Episode, list[Characte
                        for d in sh.get("dialogue", [])]
                 chars = sh.get("characters", [d.character for d in dlg])
                 names.update(chars)
+                genre_tpl  = template_for(project.genre)
+                max_secs   = min(genre_tpl.shot_seconds * 2, 8.0)
                 shots.append(Shot(id=sh.get("id", f"S{j}_{k}"),
                                   description=sh["description"],
                                   dialogue=dlg, characters=chars,
-                                  seconds=max(4.0, float(sh.get("seconds",
-                                              template_for(project.genre).shot_seconds)))))
+                                  seconds=max(4.0, min(max_secs, float(sh.get("seconds",
+                                              genre_tpl.shot_seconds))))))
             scenes.append(Scene(id=sc.get("id", f"SC{j}"),
                                 setting=sc.get("setting", ""), shots=shots))
         if not scenes:
@@ -247,6 +260,12 @@ def _script_critique(episode: Episode, characters: list[Character]) -> str | Non
             f"Each must cover: location+props+decor, lighting quality+direction+colour-temp, "
             f"camera framing, precise character positions+body language, action, emotional atmosphere. "
             f"Thin shots: {', '.join(thin_shots[:8])}")
+
+    long_shots = [sh.id for sh in all_shots if sh.seconds > 8.0]
+    if long_shots:
+        issues.append(
+            f"Shot 'seconds' values exceed the 8s video model limit — set each to ≤8: "
+            f"{', '.join(long_shots[:6])}")
 
     no_dialogue = [sh.id for sh in all_shots if not sh.dialogue]
     if len(no_dialogue) > len(all_shots) // 2:
@@ -305,7 +324,8 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
             "and character names; expand descriptions to meet DETAIL STANDARDS below. "
             "Keep existing dialogue where present; add back-and-forth exchanges where missing.\n\n"
             + _detail_rules + "\n"
-            + _dialogue_rules +
+            + _dialogue_rules + "\n"
+            + _SHOT_DURATION_RULES +
             "\nTASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
             + _json_shape
         )
@@ -321,9 +341,10 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
             "Write a FULL physical description for each — see DETAIL STANDARDS below.\n\n"
             "TASK 2 — SHOTS: Write 7-10 shots across 2-3 DISTINCT scenes (different locations), "
             "covering every beat. Each shot: full visual description + back-and-forth dialogue. "
-            "See DETAIL STANDARDS and DIALOGUE RULES below.\n\n"
+            "See DETAIL STANDARDS, DIALOGUE RULES, and SHOT DURATION RULES below.\n\n"
             + _detail_rules + "\n"
-            + _dialogue_rules +
+            + _dialogue_rules + "\n"
+            + _SHOT_DURATION_RULES +
             "\nTASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
             + _json_shape
         )
@@ -433,23 +454,37 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
 
     char_desc = {ch.name: ch.description for ch in project.characters if ch.description}
 
+    # Shots that are primarily text/graphic cards (CTAs, logo cards, title cards)
+    # cannot be rendered by a video diffusion model — they produce garbled glyphs.
+    # Skip them here so the render stage falls back to holding the keyframe still.
+    _TEXT_CARD = re.compile(
+        r"(?i)(call[\s\-]+to[\s\-]+action|full[\s\-]*screen\s+(?:text|logo|card|title|graphic)|"
+        r"\bapply\s+now\b|\bsign[\s\-]+up\s+now\b|headline\s+.{0,40}typography|"
+        r"typography\s+.{0,40}headline|logo\s+.{0,30}centered|centered\s+.{0,30}logo|"
+        r"\burl\b.{0,60}\btext\b|\btext\b.{0,60}\burl\b)"
+    )
+
     pending = []
     for sh in project.all_shots():
         if sh.clip_uri:
             continue
-        # Inline character physical descriptions so the video model can match
-        # the designed appearance — same pattern as generate_keyframes.
+        if _TEXT_CARD.search(sh.description):
+            sh.clip_prompt = "[text-card — skipped for video generation, keyframe held as still]"
+            continue
+        # Use only the first sentence of each character description as a brief
+        # visual anchor. The full appearance is already in the keyframe (init_image);
+        # injecting hundreds of chars per character overloads the model and causes
+        # odd spatial placement.
         if sh.characters:
             char_details = ", ".join(
-                f"{n} ({char_desc[n]})" if n in char_desc else n
+                f"{n} ({(char_desc[n].split('.')[0])[:100]})" if n in char_desc else n
                 for n in sh.characters)
         else:
             char_details = ""
         base = sh.description
         if char_details:
             base += (f". Characters present: {char_details}. "
-                     f"Maintain exact character appearance — same face, hair, and outfit "
-                     f"as established in prior shots, no changes.")
+                     f"Maintain exact character appearance — same face, hair, and outfit.")
         base += f". Style: {project.style_prompt}. {_NO_TEXT}"
         override = project.prompt_overrides.get("generate_clips", "")
         if override:
@@ -457,6 +492,31 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
         enriched = _enrich_prompt(ctx, base, "video")
         sh.clip_prompt = enriched
         pending.append(sh)
+
+    # ── Batch path — submit all jobs first, then poll all concurrently ──────────
+    # When the active video provider exposes generate_batch (WanComfyUIProvider),
+    # use it so all RunPod jobs are in the queue before any polling starts.
+    # RunPod auto-scales one worker per queued job → N shots ≈ same wall-clock
+    # time as 1 shot instead of N × 1.
+    _batch_provider = getattr(ctx.gw, "_batch_video_provider", lambda: None)()
+    if _batch_provider is not None and hasattr(_batch_provider, "generate_batch"):
+        items = [(sh.clip_prompt, sh.seconds, sh.keyframe_uri) for sh in pending]
+        results = _batch_provider.generate_batch(items)
+        for sh, result in zip(pending, results):
+            if isinstance(result, Exception):
+                print(f"[generate_clips] shot {sh.id} failed: {result}")
+            else:
+                sh.clip_uri = result.uri
+                model = result.model_id
+                cost += result.cost_usd
+            ctx.store.save(project)
+        return model or "n/a", cost
+
+    # ── Fallback — thread pool (one thread per shot, default all-at-once) ───────
+    # Default to len(pending) so all shots submit to RunPod simultaneously,
+    # letting the auto-scaler spin up workers in parallel.  Set CLIP_PARALLEL
+    # in .env to cap concurrency (e.g. for rate-limited providers).
+    _PARALLEL = int(os.environ.get("CLIP_PARALLEL", str(len(pending) or 1)))
 
     def _generate_one(sh):
         res = ctx.gw.video(
@@ -474,10 +534,8 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
                 sh.clip_uri, model = res.uri, res.model_used
                 cost += res.cost_usd
             except Exception as e:
-                # Log failure but continue — failed clip stays None so a retry
-                # run will pick it up, and the checkpoint below records progress.
                 print(f"[generate_clips] shot {sh.id} failed: {e}")
-            ctx.store.save(project)   # checkpoint after each shot completes
+            ctx.store.save(project)
 
     return model or "n/a", cost
 

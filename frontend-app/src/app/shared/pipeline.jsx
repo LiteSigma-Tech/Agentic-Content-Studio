@@ -77,52 +77,67 @@ export function SignalChain({ project, idx = 0, running = false, lane }) {
     return STAGES.findIndex(([, , k]) => k === failed.name);
   })();
 
-  const visible = lane ? STAGES.filter(([, l]) => l === lane) : STAGES;
+  const renderStage = ([label, laneName, key], vi, rowStages) => {
+    const i = STAGES.findIndex(([, , k]) => k === key);
+    const liveStatus = stageStatuses[key];
+    const isFailed = failedIdx !== undefined && i === failedIdx;
+    let status;
+    if (liveStatus === "awaiting_review") status = "awaiting_review";
+    else if (isFailed) status = "blocked";
+    else if (liveStatus === "done") status = "done";
+    else if (liveStatus === "running") status = "running";
+    else status = i < idx ? "done" : (i === idx && running ? "running" : "pending");
+    const c = SC[status];
+    return (
+      <React.Fragment key={key}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, minWidth: 52 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 8,
+            background: status === "pending" ? T.panel2 : `${c}1A`,
+            border: `1px solid ${status === "pending" ? T.line2 : c}`,
+            display: "grid", placeItems: "center", position: "relative",
+          }}>
+            <Lamp on={status !== "pending"} color={c} size={9} className={status === "awaiting_review" ? "led-pulse" : ""} />
+            {status === "awaiting_review" && (
+              <span style={{ position: "absolute", top: -5, right: -5, width: 10, height: 10, borderRadius: 99, background: T.violet, border: `2px solid ${T.ink}` }} />
+            )}
+          </div>
+          <div style={{ font: `500 9px/1.2 ${mono}`, color: status === "pending" ? T.faint : T.paper, textAlign: "center", maxWidth: 52 }}>{label}</div>
+        </div>
+        {vi < rowStages.length - 1 && (
+          <div style={{ height: 1, width: 12, background: status === "done" ? T.teal : T.line2, marginBottom: 20, flexShrink: 0 }} />
+        )}
+      </React.Fragment>
+    );
+  };
+
+  // Single-lane mode (used by audio/video tab pages)
+  if (lane) {
+    const visible = STAGES.filter(([, l]) => l === lane);
+    return (
+      <div style={{ display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 0, padding: "8px 2px 6px" }}>
+        {visible.map((s, vi) => renderStage(s, vi, visible))}
+      </div>
+    );
+  }
+
+  // Full pipeline: two rows (video on top, audio below) — avoids horizontal overflow
+  const videoStages = STAGES.filter(([, l]) => l === "video");
+  const audioStages = STAGES.filter(([, l]) => l === "audio");
+
+  const row = (stages, color, laneLabel) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Eyebrow color={color} style={{ marginLeft: 2 }}>{laneLabel}</Eyebrow>
+      <div style={{ display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 0 }}>
+        {stages.map((s, vi) => renderStage(s, vi, stages))}
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 0, minWidth: lane ? 340 : 720, padding: "24px 2px 6px"}}>
-        {visible.map(([label, laneName, key], vi) => {
-          const i = STAGES.findIndex(([, , k]) => k === key);
-          const liveStatus = stageStatuses[key];
-          const isFailed = failedIdx !== undefined && i === failedIdx;
-          let status;
-          if (liveStatus === "awaiting_review") status = "awaiting_review";
-          else if (isFailed) status = "blocked";
-          else if (liveStatus === "done") status = "done";
-          else if (liveStatus === "running") status = "running";
-          else status = i < idx ? "done" : (i === idx && running ? "running" : "pending");
-          const c = SC[status];
-          const first = vi === 0 || visible[vi - 1][1] !== laneName;
-          return (
-            <React.Fragment key={label}>
-              {first && vi !== 0 && <div style={{ width: 1, alignSelf: "stretch", background: T.line2, margin: "0 10px" }} />}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, minWidth: 58, position: "relative", }}>
-                {first && !lane && (
-  <div style={{ position: "absolute", top: -20, left: 0, whiteSpace: "nowrap" }}>
-    <Eyebrow color={laneName === "video" ? T.muted : T.violet}>{laneName}</Eyebrow>
-  </div>
-)}
-                <div style={{
-                  width: 38, height: 38, borderRadius: 8,
-                  background: status === "pending" ? T.panel2 : `${c}1A`,
-                  border: `1px solid ${status === "pending" ? T.line2 : c}`,
-                  display: "grid", placeItems: "center", position: "relative",
-                }}>
-                  <Lamp on={status !== "pending"} color={c} size={9} className={status === "awaiting_review" ? "led-pulse" : ""} />
-                  {status === "awaiting_review" && (
-                    <span style={{ position: "absolute", top: -5, right: -5, width: 10, height: 10, borderRadius: 99, background: T.violet, border: `2px solid ${T.ink}` }} />
-                  )}
-                </div>
-                <div style={{ font: `500 9px/1.2 ${mono}`, color: status === "pending" ? T.faint : T.paper, textAlign: "center", maxWidth: 56 }}>{label}</div>
-              </div>
-              {vi < visible.length - 1 && visible[vi + 1][1] === laneName && (
-                <div style={{ height: 1, width: 14, background: i < idx ? T.teal : T.line2, marginBottom: 22 }} />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "6px 2px" }}>
+      {row(videoStages, T.muted, "video")}
+      {row(audioStages, T.violet, "audio")}
     </div>
   );
 }

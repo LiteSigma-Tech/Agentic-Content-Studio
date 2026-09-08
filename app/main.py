@@ -80,6 +80,7 @@ class VideoReq(BaseModel):
     task: str = "default"
     seconds: float = 5.0
     fps: int = 24
+    init_image: str | None = None
 
 
 class TTSReq(BaseModel):
@@ -123,7 +124,8 @@ def gen_image(req: ImageReq):
 @app.post("/v1/video")
 def gen_video(req: VideoReq):
     return _run("video", req.task,
-                lambda p: p.generate(req.prompt, seconds=req.seconds, fps=req.fps))
+                lambda p: p.generate(req.prompt, seconds=req.seconds, fps=req.fps,
+                                     init_image=req.init_image))
 
 
 @app.post("/v1/tts")
