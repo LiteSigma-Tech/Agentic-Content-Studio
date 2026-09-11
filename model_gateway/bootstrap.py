@@ -16,7 +16,7 @@ from .providers.media import (
     HuggingFaceImageProvider, HuggingFaceTTSProvider, HuggingFaceMusicProvider,
     DeepgramTTSProvider,
     MiniMaxVideoProvider, HailuoVideoProvider, SeedanceVideoProvider,
-    RunPodComfyUIImageProvider, WanVideoProvider,
+    RunPodComfyUIImageProvider, WanVideoProvider, WanComfyUIProvider,
     GeminiImageProvider, GeminiVeoProvider,
     RunwayMLVideoProvider, LumaVideoProvider,
 )
@@ -132,6 +132,14 @@ def build_registry() -> Registry:
             modal_url=modal_url,
             runpod_key=runpod_key,
             runpod_endpoint=runpod_wan_ep,
+        ))
+
+    # Wan 2.2 via wlsdml1114 ComfyUI endpoint — LoRA support, ComfyUI scheduler.
+    wan_comfyui_ep = _key("RUNPOD_WAN_COMFYUI_ENDPOINT_ID")
+    if runpod_key and wan_comfyui_ep:
+        reg.register("video", WanComfyUIProvider(
+            runpod_key=runpod_key,
+            endpoint_id=wan_comfyui_ep,
         ))
 
     # RunPod ComfyUI FLUX.1-dev-fp8 — serverless image generation, no Docker build.

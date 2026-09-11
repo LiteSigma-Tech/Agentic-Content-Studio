@@ -135,6 +135,14 @@ def handler(job: dict) -> dict:
     resolution      = inp.get("resolution", "720p")
     _default_steps  = int(os.environ.get("WAN_INFERENCE_STEPS") or 30)
     steps           = int(inp.get("num_inference_steps", _default_steps))
+    _default_cfg    = float(os.environ.get("WAN_GUIDANCE_SCALE") or 7.0)
+    guidance_scale  = float(inp.get("guidance_scale", _default_cfg))
+    _default_neg    = (
+        "static, motionless, no movement, freeze frame, still image, "
+        "blurry, low quality, distorted, watermark, text overlay, caption, "
+        "different face, different person, character change, inconsistent appearance"
+    )
+    negative_prompt = inp.get("negative_prompt", os.environ.get("WAN_NEGATIVE_PROMPT", _default_neg))
 
     width, height = _resolution_to_dims(resolution)
 
@@ -153,11 +161,12 @@ def handler(job: dict) -> dict:
     with torch.inference_mode():
         kwargs: dict = dict(
             prompt=prompt,
+            negative_prompt=negative_prompt,
             num_frames=num_frames,
             height=height,
             width=width,
             num_inference_steps=steps,
-            guidance_scale=5.0,
+            guidance_scale=guidance_scale,
         )
         # WanImageToVideoPipeline always requires an image argument.
         # Use the provided keyframe if available, otherwise a black frame.

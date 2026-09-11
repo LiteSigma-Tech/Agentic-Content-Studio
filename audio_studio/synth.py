@@ -46,9 +46,9 @@ def is_real_audio(path: str | None) -> bool:
         return False
 
 
-def estimate_speech_seconds(text: str, cap: float) -> float:
+def estimate_speech_seconds(text: str) -> float:
     words = max(1, len(text.split()))
-    return max(0.8, min(cap, words / 2.5))   # ~150 wpm, clamped to the shot length
+    return max(0.8, words / 2.5)  # ~150 wpm
 
 
 def _ff(args: list[str]) -> None:
@@ -75,10 +75,25 @@ def synth_music(seconds: float, dst: Path, genre: str = "comedy") -> None:
 
     # Genre presets: (root_hz, chord_ratios, bpm, vol)
     presets = {
-        "comedy":      (261.63, [1, 1.25, 1.5, 2.0], 138, 0.22),   # C major, upbeat
-        "drama":       (146.83, [1, 1.189, 1.498, 2.0], 72, 0.18),  # D minor, slow
-        "romance":     (196.00, [1, 1.25, 1.498, 2.0], 84, 0.18),   # G major, gentle
-        "kids_cartoon":(261.63, [1, 1.25, 1.5, 1.782], 150, 0.20),  # C major, bright
+        "comedy":      (261.63, [1, 1.25, 1.5, 2.0],   138, 0.22),  # C major, upbeat
+        "drama":       (146.83, [1, 1.189, 1.498, 2.0],  72, 0.18),  # D minor, slow
+        "romance":     (196.00, [1, 1.25, 1.498, 2.0],   84, 0.18),  # G major, gentle
+        "kids_cartoon":(261.63, [1, 1.25, 1.5, 1.782],  150, 0.20),  # C major, bright
+        "thriller":    (138.59, [1, 1.189, 1.498, 2.0],  82, 0.18),  # C# minor, tense
+        # "horror":    (130.81, [1, 1.122, 1.498, 2.0],  52, 0.14),  # C dim, very slow
+        "sci_fi":      (220.00, [1, 1.335, 1.498, 2.0], 105, 0.20),  # A, tritone tension
+        # "fantasy":   (174.61, [1, 1.25, 1.5, 2.0],    88, 0.20),  # F major, epic
+        "action":      (164.81, [1, 1.189, 1.498, 2.0], 165, 0.25),  # E minor, driving
+        "documentary": (196.00, [1, 1.25, 1.498, 2.0],   75, 0.14),  # G major, calm
+        # "mystery":   (146.83, [1, 1.189, 1.414, 2.0],  65, 0.16),  # D minor, brooding
+        "musical":     (261.63, [1, 1.25, 1.5, 2.0],    130, 0.22),  # C major, bright
+        "crime":       (155.56, [1, 1.189, 1.498, 2.0],  90, 0.18),  # Eb minor, noir
+        "western":     (196.00, [1, 1.25, 1.5, 2.0],    95, 0.20),  # G major, open
+        "historical":  (174.61, [1, 1.189, 1.498, 2.0],  76, 0.17),  # F minor, stately
+        "sitcom":      (261.63, [1, 1.25, 1.5, 2.0],    142, 0.22),  # C major, punchy
+        "reality_tv":  (220.00, [1, 1.25, 1.5, 2.0],    122, 0.22),  # A major, energetic
+        "educational": (196.00, [1, 1.25, 1.5, 2.0],     80, 0.14),  # G major, clear
+        "animation":   (261.63, [1, 1.25, 1.5, 1.782],  145, 0.22),  # C major, playful
     }
     root, ratios, bpm, vol = presets.get(genre, presets["comedy"])
     beat_hz = bpm / 60.0

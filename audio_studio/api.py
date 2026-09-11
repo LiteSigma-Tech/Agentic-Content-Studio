@@ -91,6 +91,21 @@ class RejectReq(BaseModel):
     background: bool = False
 
 
+_GENRE_LABEL_OVERRIDES = {
+    "kids_cartoon": "Kids Cartoon",
+    "sci_fi":       "Sci-Fi",
+    "reality_tv":   "Reality TV",
+}
+
+
+@app.get("/v1/genres")
+def list_genres():
+    return [
+        {"value": g.value, "label": _GENRE_LABEL_OVERRIDES.get(g.value, g.value.replace("_", " ").title())}
+        for g in Genre
+    ]
+
+
 @app.post("/v1/projects")
 def create(req: CreateReq):
     p = create_project(req.concept, req.genre, req.title,

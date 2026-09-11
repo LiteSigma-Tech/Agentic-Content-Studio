@@ -69,6 +69,8 @@ export const modelsApi = {
 }
 
 export const studioApiCalls = {
+  getGenres: () =>
+    studioApi.get('/v1/genres').then(r => r.data),
   listProjects: (limit = 10, offset = 0) =>
     studioApi.get('/v1/projects', { params: { limit, offset } }).then(r => r.data).catch(() => ({ items: [], total: 0 })),
   createProject: (concept, genre, review_mode = false) =>

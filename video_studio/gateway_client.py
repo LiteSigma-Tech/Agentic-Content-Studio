@@ -82,6 +82,19 @@ class InProcessGateway(Gateway):
         return GenResult(uri=out.result.uri, model_used=out.model_id,
                          cost_usd=out.cost_usd)
 
+    def _batch_video_provider(self):
+        """Return the active video provider if it supports generate_batch, else None.
+
+        Used by generate_clips to bypass the per-shot gateway round-trips and
+        submit all RunPod jobs in one fan-out before polling begins.
+        """
+        try:
+            chain = self.router.candidates("video", "default")
+            provider = chain[0] if chain else None
+            return provider if provider and hasattr(provider, "generate_batch") else None
+        except Exception:
+            return None
+
 
 class HttpGateway(Gateway):
     def __init__(self, base_url: str = "http://127.0.0.1:8000"):
@@ -110,7 +123,8 @@ class HttpGateway(Gateway):
     def video(self, task, prompt, *, seconds=5.0, fps=24, init_image=None,
               required_caps=None):
         return self._post("/v1/video", {"task": task, "prompt": prompt,
-                                        "seconds": seconds, "fps": fps})
+                                        "seconds": seconds, "fps": fps,
+                                        "init_image": init_image})
 
     def tts(self, task, text, *, voice_id="default", required_caps=None):
         return self._post("/v1/tts", {"task": task, "text": text, "voice_id": voice_id})

@@ -41,6 +41,17 @@ def _is_real_video(path: str | None) -> bool:
         return False
 
 
+def _clip_duration(path: str) -> float:
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=10)
+        return float(r.stdout.strip())
+    except Exception:
+        return 0.0
+
+
 def build_manifest(project: Project, out_dir: Path) -> str:
     """Timeline/EDL: ordered clips with start times. Saved as JSON."""
     timeline, t = [], 0.0
@@ -191,14 +202,30 @@ def render_mp4(project: Project, out_dir: Path) -> tuple[str | None, bool]:
     for i, sh in enumerate(project.all_shots()):
         seg = parts_dir / f"seg_{i:03d}.mp4"
         if _is_real_video(sh.clip_uri):
+            target = sh.seconds
+            clip_dur = _clip_duration(sh.clip_uri)
+            # Prefer slowdown over looping: stretch the clip up to 2× before
+            # holding the last frame, so the viewer sees continuous (if slower)
+            # motion rather than an abrupt restart.
+            # For clips shorter than the target (e.g. Wan 8s cap vs 10s shot),
+            # hold the last frame for the remainder rather than slowing down.
+            # Slowdown degrades dialogue scenes — speech looks like slow motion.
+            # Scale to fill then crop — avoids black bars when clip aspect ratio
+            # differs from the output (e.g. portrait 480×832 clips in a 1280×720 frame).
+            scale_crop = (f"scale={_W}:{_H}:force_original_aspect_ratio=increase,"
+                          f"crop={_W}:{_H},setsar=1")
+            if clip_dur > 0 and clip_dur < target - 0.1:
+                hold = target - clip_dur
+                vf = f"tpad=stop_mode=clone:stop_duration={hold:.3f},{scale_crop}"
+            else:
+                vf = scale_crop
             subprocess.run(
-                ["ffmpeg", "-y", "-stream_loop", "-1", "-i", sh.clip_uri,
-                 "-t", str(sh.seconds),
-                 "-vf", f"scale={_W}:{_H}:force_original_aspect_ratio=decrease,"
-                        f"pad={_W}:{_H}:(ow-iw)/2:(oh-ih)/2,setsar=1",
-                 "-r", str(_FPS), "-c:v", "libx264", "-preset", "fast",
+                ["ffmpeg", "-y", "-i", sh.clip_uri,
+                 "-t", str(target),
+                 "-vf", vf,
+                 "-r", str(_FPS), "-c:v", "libx264", "-crf", "18", "-preset", "medium",
                  "-pix_fmt", "yuv420p", str(seg)],
-                capture_output=True, check=True, timeout=120)
+                capture_output=True, check=True, timeout=180)
             used_real = True
             all_keyframe = False
         elif sh.keyframe_uri and Path(sh.keyframe_uri).exists():

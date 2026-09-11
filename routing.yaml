@@ -41,16 +41,16 @@ routing:
     default:
       # Quality order: best providers first. Only registered models are used;
       # unregistered ones (missing API key) are silently skipped by the router.
-      # animate-diff removed: it produces cartoon-style output regardless of prompt.
-      # mock/video is last resort — render.py converts keyframe images to static shots.
       # Priority chain:
-      #   runpod/wan-2.2     — self-hosted Wan on 4090, ~$0.05/clip, best quality
+      #   wan/comfyui        — Wan 2.2 via ComfyUI endpoint (LoRA, scheduler control)
+      #   wan/runpod         — Wan 2.2 via diffusers (fallback if comfyui ep not set)
       #   google/veo-2       — free (daily quota), excellent quality
       #   replicate/seedance — ~$0.15/clip, solid fallback
       #   minimax/hailuo-02  — ~$0.24/clip
       #   mock/video         — Ken Burns from keyframe, always free
-      default: "wan/runpod"
+      default: "wan/comfyui"
       fallbacks:
+        - "wan/runpod"
         - "google/veo-2"
         - "replicate/seedance-1-lite"
         - "minimax/hailuo-02"
