@@ -77,6 +77,10 @@ export const studioApiCalls = {
     studioApi.post('/v1/projects', { concept, genre, review_mode }).then(r => r.data),
   runProject: (id, body = {}) =>
     studioApi.post('/v1/projects/' + id + '/run', body).then(r => r.data),
+  cancelProject: id =>
+    studioApi.post('/v1/projects/' + id + '/cancel').then(r => r.data).catch(() => ({ ok: true })),
+  deleteProject: id =>
+    studioApi.delete('/v1/projects/' + id).then(r => r.data),
   getProject: id =>
     studioApi.get('/v1/projects/' + id).then(r => r.data),
   videoUrl: id => `${STUDIO}/v1/projects/${id}/video`,
