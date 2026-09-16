@@ -82,6 +82,26 @@ class ProjectStore:
             pass
         return self._path(project_id).exists()
 
+    def delete(self, project_id: str) -> None:
+        path = self._path(project_id)
+        if path.exists():
+            path.unlink()
+        media = self.root / project_id
+        if media.exists():
+            import shutil
+            shutil.rmtree(media, ignore_errors=True)
+
+    async def adelete(self, project_id: str) -> None:
+        self.delete(project_id)
+        try:
+            from shared.database import get_pool, is_available
+            if await is_available():
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute("DELETE FROM projects WHERE id=$1", project_id)
+        except Exception:
+            pass
+
     async def alist_projects(self, limit: int = 50, offset: int = 0) -> list:
         """List project summaries. Uses DB when available and non-empty, falls back to disk.
 

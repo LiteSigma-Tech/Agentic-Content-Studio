@@ -595,7 +595,7 @@ class RunPodComfyUIImageProvider:
                 if not job_id:
                     raise ProviderError("RunPod ComfyUI: no job ID returned")
 
-                deadline = time.time() + 300
+                deadline = time.time() + 600
                 poll = f"{self._API}/{self._endpoint}/status/{job_id}"
                 while time.time() < deadline:
                     time.sleep(3)
@@ -776,7 +776,7 @@ class WanVideoProvider:
         deadline = time.time() + 1200
         poll = f"{self._RUNPOD_API}/{self._runpod_ep}/status/{job_id}"
         while time.time() < deadline:
-            time.sleep(10)
+            time.sleep(6)
             with httpx.Client(timeout=30) as poll_client:
                 rp = poll_client.get(poll, headers=headers)
                 d = rp.json()
@@ -945,7 +945,7 @@ class WanComfyUIProvider:
         deadline = time.time() + 1200
         poll_url = f"{self._RUNPOD_API}/{self._endpoint_id}/status/{job_id}"
         while time.time() < deadline:
-            time.sleep(10)
+            time.sleep(6)
             with httpx.Client(timeout=30) as c:
                 d = c.get(poll_url, headers=self._headers()).json()
             status  = d.get("status", "")

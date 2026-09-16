@@ -72,6 +72,7 @@ class CreateReq(BaseModel):
     genre: Genre
     title: str = ""
     review_mode: bool = False
+    target_duration_s: int | None = None
 
 
 class RunReq(BaseModel):
@@ -109,7 +110,8 @@ def list_genres():
 @app.post("/v1/projects")
 def create(req: CreateReq):
     p = create_project(req.concept, req.genre, req.title,
-                       store=store, review_mode=req.review_mode)
+                       store=store, review_mode=req.review_mode,
+                       target_duration_s=req.target_duration_s)
     return {"id": p.id, "title": p.title, "genre": p.genre.value,
             "review_mode": p.review_mode}
 
@@ -142,6 +144,23 @@ async def run(project_id: str, req: RunReq, bg: BackgroundTasks):
     except Exception as e:  # noqa: BLE001
         return {"status": "failed", "error": str(e), **pipeline.status(project_id)}
     return pipeline.status(project_id)
+
+
+@app.post("/v1/projects/{project_id}/cancel")
+async def cancel_project(project_id: str):
+    if not store.exists(project_id):
+        raise HTTPException(404, "project not found")
+    pipeline.request_stop(project_id)
+    return {"status": "stop_requested", "id": project_id}
+
+
+@app.delete("/v1/projects/{project_id}")
+async def delete_project(project_id: str):
+    if not store.exists(project_id):
+        raise HTTPException(404, "project not found")
+    pipeline.request_stop(project_id)
+    await store.adelete(project_id)
+    return {"deleted": project_id}
 
 
 @app.post("/v1/projects/{project_id}/stages/{stage_name}/approve")

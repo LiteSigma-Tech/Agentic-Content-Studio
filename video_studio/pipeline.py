@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 
 from .gateway_client import Gateway
 from .models import Genre, Project, StageStatus
-from .stages import STAGES, StageContext
+from .stages import STAGES, PipelineCancelled, StageContext
 from .store import ProjectStore
 
 
@@ -27,11 +28,13 @@ def _now() -> str:
 
 def create_project(concept: str, genre: Genre, title: str = "",
                    store: ProjectStore | None = None,
-                   review_mode: bool = False) -> Project:
+                   review_mode: bool = False,
+                   target_duration_s: int | None = None) -> Project:
     store = store or ProjectStore()
     pid = uuid.uuid4().hex[:12]
     project = Project(id=pid, title=title or concept[:48], concept=concept,
-                      genre=genre, review_mode=review_mode)
+                      genre=genre, review_mode=review_mode,
+                      target_duration_s=target_duration_s)
     store.save(project)
     return project
 
@@ -74,11 +77,26 @@ class Pipeline:
         self.on_progress = on_progress or (lambda p, s: None)
         self.stages = stages if stages is not None else STAGES
 
+    def _stop_file(self, project_id: str) -> Path:
+        return self.store.root / f"{project_id}.stop"
+
+    def request_stop(self, project_id: str) -> None:
+        self._stop_file(project_id).touch()
+
+    def _clear_stop(self, project_id: str) -> None:
+        f = self._stop_file(project_id)
+        if f.exists():
+            f.unlink()
+
     def run(self, project_id: str, *, force_from: str | None = None,
             no_review: bool = False) -> Project:
         project = self.store.load(project_id)
+        self._clear_stop(project_id)
+        stop_file = self._stop_file(project_id)
+        cancel_check = stop_file.exists
         ctx = StageContext(gw=self.gw, store=self.store,
-                           media_dir=self.store.media_dir(project_id))
+                           media_dir=self.store.media_dir(project_id),
+                           cancel_check=cancel_check)
 
         # force_from: clear outputs + reset status for that stage and everything after
         # so stages re-run instead of skipping or returning early on awaiting_review.
@@ -93,6 +111,10 @@ class Pipeline:
                 self.store.save(project)
 
         for name, fn in self.stages:
+            if stop_file.exists():
+                self._clear_stop(project_id)
+                return project
+
             rec = project.pipeline.record(name)
 
             # Pipeline is paused — a stage needs human review before we can continue
@@ -110,6 +132,13 @@ class Pipeline:
 
             try:
                 model_used, cost = fn(project, ctx)
+            except PipelineCancelled:
+                rec.status = StageStatus.pending
+                rec.started_at = None
+                rec.error = None
+                self.store.save(project)
+                self._clear_stop(project_id)
+                return project
             except Exception as e:  # noqa: BLE001 — checkpoint the failure, then surface
                 rec.status = StageStatus.failed
                 rec.error = f"{type(e).__name__}: {e}"

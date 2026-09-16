@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from .gateway_client import Gateway
 from .genres import template_for
@@ -24,11 +25,16 @@ from .render import build_manifest, render_mp4
 from .store import ProjectStore
 
 
+class PipelineCancelled(Exception):
+    """Raised by a stage when a stop has been requested; pipeline resets the stage to pending."""
+
+
 @dataclass
 class StageContext:
     gw: Gateway
     store: ProjectStore
     media_dir: Path
+    cancel_check: Callable[[], bool] | None = field(default=None)
 
 
 # --- Prompt loader -----------------------------------------------------------
@@ -132,6 +138,21 @@ _SHOT_DURATION_RULES = _env_prompt("PROMPT_SHOT_DURATION_RULES", (
     "  • Do NOT create 'call to action', 'logo card', or 'title card' shots — "
     "graphic overlays are added in post and cannot be rendered by the video model.\n"
 ))
+
+
+def _target_duration_block(target_s: int, avg_shot_s: float) -> str:
+    n = max(3, round(target_s / avg_shot_s))
+    per = round(target_s / n)
+    per = max(4, min(8, per))
+    lo, hi = max(3, n - 1), n + 1
+    return (
+        f"TARGET RUNTIME — hard constraint enforced by the pipeline:\n"
+        f"  • Total video must be {target_s} seconds (±5 s).\n"
+        f"  • Write {lo}–{hi} shots with 'seconds' values summing to ≤{target_s}.\n"
+        f"  • Set each shot's 'seconds' to approximately {per} "
+        f"(adjust by ±1 across shots to hit the total exactly).\n"
+        f"  • This overrides any default shot-count guidance elsewhere in this prompt.\n"
+    )
 
 # Preambles for the two write_script paths (adapt existing vs create from scratch).
 _SCRIPT_ADAPT_PREAMBLE = _env_prompt("PROMPT_SCRIPT_ADAPT_PREAMBLE", (
@@ -298,6 +319,11 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
     )
     _dialogue_rules = _DIALOGUE_RULES
 
+    _duration_block = (
+        _target_duration_block(project.target_duration_s, tpl.shot_seconds)
+        if project.target_duration_s else ""
+    )
+
     # If the concept is already valid JSON matching our schema, use it directly.
     if len(project.concept) > 300:
         parsed_direct = _extract_json(project.concept)
@@ -325,7 +351,8 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
             "Keep existing dialogue where present; add back-and-forth exchanges where missing.\n\n"
             + _detail_rules + "\n"
             + _dialogue_rules + "\n"
-            + _SHOT_DURATION_RULES +
+            + _SHOT_DURATION_RULES
+            + ("\n" + _duration_block if _duration_block else "") +
             "\nTASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
             + _json_shape
         )
@@ -344,7 +371,8 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
             "See DETAIL STANDARDS, DIALOGUE RULES, and SHOT DURATION RULES below.\n\n"
             + _detail_rules + "\n"
             + _dialogue_rules + "\n"
-            + _SHOT_DURATION_RULES +
+            + _SHOT_DURATION_RULES
+            + ("\n" + _duration_block if _duration_block else "") +
             "\nTASK 3 — OUTPUT: Respond ONLY with valid JSON matching this exact shape:\n"
             + _json_shape
         )
@@ -415,6 +443,8 @@ def generate_keyframes(project: Project, ctx: StageContext) -> tuple[str, float]
     char_desc = {ch.name: ch.description for ch in project.characters if ch.description}
     char_ref  = {ch.name: ch.reference_uri for ch in project.characters if ch.reference_uri}
     for sh in project.all_shots():
+        if ctx.cancel_check and ctx.cancel_check():
+            raise PipelineCancelled()
         if sh.keyframe_uri:
             continue
         # Inline each character's physical description so the image model has
@@ -481,10 +511,23 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
                 for n in sh.characters)
         else:
             char_details = ""
+        dialogue_lines = sh.dialogue or []
+        timing_hint = ""
+        if dialogue_lines:
+            first_speaker = dialogue_lines[0].character
+            first_line = dialogue_lines[0].text
+            timing_hint = (
+                f" Character action and facial expression begin changing immediately "
+                f"within the first 0.5 seconds — do not hold a static pose. "
+                f"{first_speaker} starts speaking or reacting within the first second: "
+                f"\"{first_line[:60]}\". Reactions and lip movement are visible and "
+                f"synchronised to the dialogue from the very first frame."
+            )
         base = sh.description
         if char_details:
             base += (f". Characters present: {char_details}. "
                      f"Maintain exact character appearance — same face, hair, and outfit.")
+        base += timing_hint
         base += f". Style: {project.style_prompt}. {_NO_TEXT}"
         override = project.prompt_overrides.get("generate_clips", "")
         if override:
@@ -493,30 +536,9 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
         sh.clip_prompt = enriched
         pending.append(sh)
 
-    # ── Batch path — submit all jobs first, then poll all concurrently ──────────
-    # When the active video provider exposes generate_batch (WanComfyUIProvider),
-    # use it so all RunPod jobs are in the queue before any polling starts.
-    # RunPod auto-scales one worker per queued job → N shots ≈ same wall-clock
-    # time as 1 shot instead of N × 1.
+    _MAX_RETRIES = int(os.environ.get("CLIP_MAX_RETRIES", "2"))
     _batch_provider = getattr(ctx.gw, "_batch_video_provider", lambda: None)()
-    if _batch_provider is not None and hasattr(_batch_provider, "generate_batch"):
-        items = [(sh.clip_prompt, sh.seconds, sh.keyframe_uri) for sh in pending]
-        results = _batch_provider.generate_batch(items)
-        for sh, result in zip(pending, results):
-            if isinstance(result, Exception):
-                print(f"[generate_clips] shot {sh.id} failed: {result}")
-            else:
-                sh.clip_uri = result.uri
-                model = result.model_id
-                cost += result.cost_usd
-            ctx.store.save(project)
-        return model or "n/a", cost
-
-    # ── Fallback — thread pool (one thread per shot, default all-at-once) ───────
-    # Default to len(pending) so all shots submit to RunPod simultaneously,
-    # letting the auto-scaler spin up workers in parallel.  Set CLIP_PARALLEL
-    # in .env to cap concurrency (e.g. for rate-limited providers).
-    _PARALLEL = int(os.environ.get("CLIP_PARALLEL", str(len(pending) or 1)))
+    _use_batch = _batch_provider is not None and hasattr(_batch_provider, "generate_batch")
 
     def _generate_one(sh):
         res = ctx.gw.video(
@@ -525,18 +547,50 @@ def generate_clips(project: Project, ctx: StageContext) -> tuple[str, float]:
             required_caps=tpl.required_caps)
         return sh, res
 
-    with ThreadPoolExecutor(max_workers=_PARALLEL) as pool:
-        futures = {pool.submit(_generate_one, sh): sh for sh in pending}
-        for fut in as_completed(futures):
-            sh = futures[fut]
-            try:
-                sh, res = fut.result()
-                sh.clip_uri, model = res.uri, res.model_used
-                cost += res.cost_usd
-            except Exception as e:
-                print(f"[generate_clips] shot {sh.id} failed: {e}")
-            ctx.store.save(project)
+    for attempt in range(_MAX_RETRIES + 1):
+        remaining = [sh for sh in pending if not sh.clip_uri]
+        if not remaining:
+            break
+        if attempt > 0:
+            ids = [sh.id for sh in remaining]
+            print(f"[generate_clips] retry {attempt}/{_MAX_RETRIES} — {len(remaining)} shot(s) without clips: {ids}")
 
+        if _use_batch:
+            items = [(sh.clip_prompt, sh.seconds, sh.keyframe_uri) for sh in remaining]
+            results = _batch_provider.generate_batch(items)
+            for sh, result in zip(remaining, results):
+                if isinstance(result, Exception):
+                    print(f"[generate_clips] shot {sh.id} failed (attempt {attempt + 1}): {result}")
+                else:
+                    sh.clip_uri = result.uri
+                    model = result.model_id
+                    cost += result.cost_usd
+                ctx.store.save(project)
+        else:
+            _PARALLEL = int(os.environ.get("CLIP_PARALLEL", str(len(remaining) or 1)))
+            cancelled = False
+            with ThreadPoolExecutor(max_workers=_PARALLEL) as pool:
+                futures = {pool.submit(_generate_one, sh): sh for sh in remaining}
+                for fut in as_completed(futures):
+                    if ctx.cancel_check and ctx.cancel_check():
+                        cancelled = True
+                        break
+                    sh = futures[fut]
+                    try:
+                        sh, res = fut.result()
+                        sh.clip_uri, model = res.uri, res.model_used
+                        cost += res.cost_usd
+                    except Exception as e:
+                        print(f"[generate_clips] shot {sh.id} failed (attempt {attempt + 1}): {e}")
+                    ctx.store.save(project)
+            if cancelled:
+                raise PipelineCancelled()
+
+    still_failed = [sh.id for sh in pending if not sh.clip_uri]
+    if still_failed:
+        raise RuntimeError(
+            f"Clip generation failed after {_MAX_RETRIES + 1} attempt(s) for shots: {still_failed}"
+        )
     return model or "n/a", cost
 
 
