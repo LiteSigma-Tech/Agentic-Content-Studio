@@ -387,12 +387,13 @@ def write_script(project: Project, ctx: StageContext) -> tuple[str, float]:
     parsed = _extract_json(res.text)
     built = _parse_episode(parsed, project) if parsed else None
 
-    # Quality gate: up to 2 retries, each with pointed per-field feedback.
+    # Quality gate: up to 2 retries.
+    # Fires when the initial parse failed (built is None) OR when it passed
+    # parsing but failed the quality critique — so a bad first response always
+    # gets at least one retry rather than falling straight to the skeleton.
     for _pass in range(2):
-        if built is None:
-            break
-        critique = _script_critique(*built)
-        if not critique:
+        critique = _script_critique(*built) if built is not None else "Response did not produce valid episode JSON. Rewrite it completely."
+        if built is not None and not critique:
             break
         res = ctx.gw.llm(
             tpl.llm_task,

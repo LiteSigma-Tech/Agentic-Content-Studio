@@ -324,15 +324,16 @@ export function StageReviewBanner({ project, stageName, onApprove, onReject, dis
         : (
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{withAudio.length}/{allShots.length} shots with dialogue</div>
-            {withAudio.slice(0, 3).map((s, i) => (
-              <div key={s.id} style={{ display: "grid", gap: 4 }}>
-                <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>
-                  {(s.dialogue || []).map((l) => `${l.character}: ${l.text}`).join(" / ").slice(0, 100) || `Shot ${i + 1}`}
+            <div style={{ maxHeight: 420, overflowY: "auto", display: "grid", gap: 12, paddingRight: 4 }}>
+              {withAudio.map((s, i) => (
+                <div key={s.id} style={{ display: "grid", gap: 4 }}>
+                  <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>
+                    {(s.dialogue || []).map((l) => `${l.character}: ${l.text}`).join(" / ") || `Shot ${i + 1}`}
+                  </div>
+                  <audio controls src={studioApiCalls.mediaUrl(s.dialogue_audio_uri)} style={{ width: "100%" }} />
                 </div>
-                <audio controls src={studioApiCalls.mediaUrl(s.dialogue_audio_uri)} style={{ width: "100%" }} />
-              </div>
-            ))}
-            {withAudio.length > 3 && <div style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>+{withAudio.length - 3} more shots</div>}
+              ))}
+            </div>
           </div>
         );
     }
