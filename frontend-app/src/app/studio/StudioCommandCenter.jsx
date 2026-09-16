@@ -20,7 +20,9 @@ import {
   AlertTriangle,
   Trash2,
   Sparkles,
-  Zap
+  Zap,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { studioApiCalls } from "../../api";
 import {
@@ -267,6 +269,9 @@ export default function StudioCommandCenter() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [rerunStage, setRerunStage] = useState("");
   const [showInterruptModal, setShowInterruptModal] = useState(false);
+  const [showReviewQueueModal, setShowReviewQueueModal] = useState(false);
+  const [expandedPreviewProjectId, setExpandedPreviewProjectId] = useState(null);
+  const [reviewingId, setReviewingId] = useState(null);
 
   const scrollToInspector = (delay = 80) => {
     setTimeout(() => {
@@ -681,17 +686,30 @@ export default function StudioCommandCenter() {
             </div>
           </div>
 
-          <div style={{
-            background: T.panel,
-            border: `1px solid ${awaiting.length > 0 ? `${T.hitl}44` : T.line}`,
-            borderRadius: T.radiusMd,
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxShadow: awaiting.length > 0 ? `0 0 12px ${T.hitl}0A` : "none",
-            transition: "border-color 0.2s ease"
-          }}>
+          <div
+            onClick={() => awaiting.length > 0 && setShowReviewQueueModal(true)}
+            role={awaiting.length > 0 ? "button" : undefined}
+            tabIndex={awaiting.length > 0 ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (awaiting.length > 0 && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                setShowReviewQueueModal(true);
+              }
+            }}
+            title={awaiting.length > 0 ? "Open pending review queue" : undefined}
+            style={{
+              background: T.panel,
+              border: `1px solid ${awaiting.length > 0 ? `${T.hitl}44` : T.line}`,
+              borderRadius: T.radiusMd,
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              boxShadow: awaiting.length > 0 ? `0 0 12px ${T.hitl}0A` : "none",
+              cursor: awaiting.length > 0 ? "pointer" : "default",
+              transition: "border-color 0.2s ease, transform 0.15s ease",
+            }}
+          >
             <div>
               <Eyebrow color={awaiting.length > 0 ? T.hitl : T.faint}>Pending review</Eyebrow>
               <div style={{ font: `700 22px/1 ${mono}`, color: awaiting.length > 0 ? T.hitl : T.paper, marginTop: 4 }}>
@@ -997,9 +1015,9 @@ export default function StudioCommandCenter() {
               </span>
             )}
           </div>
-          {awaiting.length > 4 && (
-            <Btn size="sm" kind="ghost" onClick={() => navigate("/activity-log")}>
-              See all {awaiting.length}
+          {awaiting.length > 0 && (
+            <Btn size="sm" kind="ghost" onClick={() => setShowReviewQueueModal(true)}>
+              {awaiting.length > 4 ? `See all ${awaiting.length}` : `View queue (${awaiting.length})`}
               <ChevronRight size={13} />
             </Btn>
           )}
@@ -1959,6 +1977,322 @@ export default function StudioCommandCenter() {
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Btn size="sm" onClick={() => setShowVideoModal(false)}>Close</Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Full Pending Reviews Queue Modal */}
+      <Modal
+        isOpen={showReviewQueueModal}
+        onClose={() => setShowReviewQueueModal(false)}
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <CheckSquare color={T.hitl} size={18} />
+            <span>Pending Review Queue</span>
+            {awaiting.length > 0 && (
+              <span style={{
+                font: `600 11px/1 ${mono}`,
+                color: T.hitl,
+                background: `${T.hitl}22`,
+                padding: "3px 8px",
+                borderRadius: T.radiusMd,
+                marginLeft: 4,
+              }}>
+                {awaiting.length} pending
+              </span>
+            )}
+          </div>
+        }
+        maxWidth={760}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {awaiting.length === 0 ? (
+            <div style={{
+              padding: "32px 16px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}>
+              <CheckSquare color={T.teal} size={32} />
+              <div style={{ font: `700 15px/1.2 ${sans}`, color: T.paper }}>No pending reviews</div>
+              <div style={{ font: `400 13px/1.4 ${sans}`, color: T.faint, maxWidth: 360 }}>
+                All active episode pipelines are running autonomously or have been completed.
+              </div>
+            </div>
+          ) : (
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              maxHeight: bp === "mobile" ? "calc(82vh - 120px)" : "65vh",
+              overflowY: "auto",
+              paddingRight: bp === "mobile" ? 0 : 4,
+              WebkitOverflowScrolling: "touch",
+            }}>
+              {awaiting.map(({ project: p, stage }) => {
+                const isItemApprovePending = reviewingId === p.id && approve.isPending;
+                const isItemRejectPending = reviewingId === p.id && reject.isPending;
+                const isPreviewExpanded = expandedPreviewProjectId === p.id;
+                const stageIndex = STAGES.findIndex(([, , n]) => n === stage.name);
+                const humanStageName = stage.name.replace(/_/g, " ");
+
+                return (
+                  <Panel
+                    key={p.id}
+                    style={{
+                      padding: bp === "mobile" ? 12 : 16,
+                      background: T.panel2,
+                      border: `1px solid ${T.line}`,
+                      borderLeft: `4px solid ${T.hitl}`,
+                      borderRadius: T.radiusMd,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    {/* Header: Title, Tags & Stage Status */}
+                    <div style={{
+                      display: "flex",
+                      flexDirection: bp === "mobile" ? "column" : "row",
+                      justifyContent: "space-between",
+                      alignItems: bp === "mobile" ? "flex-start" : "center",
+                      gap: 8,
+                    }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{
+                          font: `700 ${bp === "mobile" ? "14px" : "15px"}/1.3 ${sans}`,
+                          color: T.paper,
+                          wordBreak: "break-word",
+                        }}>
+                          {p.title || p.id}
+                        </div>
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          marginTop: 4,
+                        }}>
+                          <span style={{ font: `500 10px/1.2 ${mono}`, color: T.faint }}>
+                            #{p.id.slice(0, 8)}
+                          </span>
+                          {p.genre && (
+                            <span style={{
+                              font: `500 10px/1.2 ${mono}`,
+                              color: T.paper,
+                              background: `${T.line}50`,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                            }}>
+                              {GENRE_DETAILS[p.genre]?.label || p.genre.replace(/_/g, " ")}
+                            </span>
+                          )}
+                          {p.aspect_ratio && (
+                            <span style={{
+                              font: `500 10px/1.2 ${mono}`,
+                              color: T.faint,
+                              border: `1px solid ${T.line2}`,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                            }}>
+                              {p.aspect_ratio}
+                            </span>
+                          )}
+                          {stageIndex !== -1 && (
+                            <span style={{ font: `500 10px/1.2 ${mono}`, color: T.faint }}>
+                              Step {stageIndex + 1}/{STAGES.length}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                        <Pill status="awaiting_review" label={`Paused: ${humanStageName}`} />
+                      </div>
+                    </div>
+
+                    {/* Concept Snippet if available */}
+                    {p.concept && (
+                      <div style={{
+                        font: `400 12px/1.5 ${sans}`,
+                        color: T.muted,
+                        background: T.ink,
+                        padding: "8px 10px",
+                        borderRadius: T.radiusSm,
+                        border: `1px solid ${T.line2}`,
+                        fontStyle: "italic",
+                        wordBreak: "break-word",
+                      }}>
+                        &quot;{p.concept}&quot;
+                      </div>
+                    )}
+
+                    {/* Collapsible Stage Artifact Preview */}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedPreviewProjectId((prev) => (prev === p.id ? null : p.id))}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: T.teal,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "4px 0",
+                          font: `600 12px/1.2 ${sans}`,
+                        }}
+                      >
+                        {isPreviewExpanded ? <EyeOff size={14} /> : <Eye size={14} />}
+                        <span>{isPreviewExpanded ? "Hide Stage Output" : "View Stage Artifacts & Output"}</span>
+                      </button>
+
+                      <AnimatePresence>
+                        {isPreviewExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.15 }}
+                            style={{ overflow: "hidden", marginTop: 6 }}
+                          >
+                            <div style={{
+                              background: T.ink,
+                              border: `1px solid ${T.line2}`,
+                              borderRadius: T.radiusMd,
+                              padding: 12,
+                              maxHeight: 260,
+                              overflowY: "auto",
+                              WebkitOverflowScrolling: "touch",
+                            }}>
+                              {StageOutputPreview(stage.name, p)}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    {/* Action Buttons: Responsive, Ergonomic Touch Targets */}
+                    <div style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginTop: 4,
+                      alignItems: "stretch",
+                    }}>
+                      <button
+                        type="button"
+                        disabled={isItemApprovePending}
+                        onClick={() => {
+                          setReviewingId(p.id);
+                          approve.mutate(
+                            { id: p.id, stage: stage.name },
+                            { onSettled: () => setReviewingId(null) }
+                          );
+                        }}
+                        style={{
+                          flex: bp === "mobile" ? "1 1 100%" : "2 1 160px",
+                          minHeight: 42,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                          background: `${T.teal}22`,
+                          color: T.teal,
+                          border: `1px solid ${T.teal}77`,
+                          borderRadius: T.radiusMd,
+                          padding: "9px 14px",
+                          font: `700 13px/1 ${sans}`,
+                          cursor: isItemApprovePending ? "not-allowed" : "pointer",
+                          opacity: isItemApprovePending ? 0.6 : 1,
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {isItemApprovePending ? (
+                          <Loader2 size={16} className="spin" />
+                        ) : (
+                          <Check size={16} />
+                        )}
+                        <span>Approve & Continue</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isItemRejectPending}
+                        onClick={() => {
+                          setReviewingId(p.id);
+                          reject.mutate(
+                            { id: p.id, stage: stage.name },
+                            { onSettled: () => setReviewingId(null) }
+                          );
+                        }}
+                        style={{
+                          flex: bp === "mobile" ? "1 1 calc(50% - 4px)" : "1 1 110px",
+                          minHeight: 42,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          background: `${T.clay}1A`,
+                          color: T.clay,
+                          border: `1px solid ${T.clay}55`,
+                          borderRadius: T.radiusMd,
+                          padding: "9px 12px",
+                          font: `600 12px/1 ${sans}`,
+                          cursor: isItemRejectPending ? "not-allowed" : "pointer",
+                          opacity: isItemRejectPending ? 0.6 : 1,
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {isItemRejectPending ? (
+                          <Loader2 size={14} className="spin" />
+                        ) : (
+                          <X size={14} />
+                        )}
+                        <span>Reject</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedId(p.id);
+                          setShowReviewQueueModal(false);
+                          scrollToInspector(100);
+                        }}
+                        style={{
+                          flex: bp === "mobile" ? "1 1 calc(50% - 4px)" : "1 1 130px",
+                          minHeight: 42,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          background: T.panel,
+                          color: T.paper,
+                          border: `1px solid ${T.line2}`,
+                          borderRadius: T.radiusMd,
+                          padding: "9px 12px",
+                          font: `600 12px/1 ${sans}`,
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span>Open in Studio</span>
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  </Panel>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+            <Btn size="sm" onClick={() => setShowReviewQueueModal(false)}>
+              Close Queue
+            </Btn>
           </div>
         </div>
       </Modal>
