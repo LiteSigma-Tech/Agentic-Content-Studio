@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import Layout from "../landing/Layout";
 
 
-import filmstripCollaborateImg from "../assets/landing/img2.jpg";
+import filmstripCollaborateImg from "../assets/landing/img2.webp";
 
 import lighthouseImg from '../assets/showcase/lighthouse.webp';
 import atlasImg from '../assets/showcase/atlas.webp';
