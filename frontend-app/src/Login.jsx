@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useAuth } from './AuthContext'
+import { Link } from "react-router-dom";
 import { T, mono, sans, Panel, Btn, Eyebrow } from './app/shared/ui'
 import { Clapperboard, Eye, EyeOff, AlertCircle, ArrowRight, Loader2, Mail, Lock, Sparkles } from 'lucide-react'
+import { BrandMark } from './landing/SiteNav'
 
 // Simple Inline SVG Icons for Social Providers
 const GoogleIcon = () => (
@@ -106,13 +108,10 @@ export default function Login({ onSuccess }) {
   return (
     <div style={{ background: T.ink, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: sans }}>
       <Panel animate style={{ padding: 32, width: 380, maxWidth: '92vw' }}>
-        {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <span style={{ display: 'inline-grid', placeItems: 'center', width: 28, height: 28, border: `1.5px solid ${T.violet}`, borderRadius: 6, color: T.violet, background: `${T.violet}1A` }}>
-            <Clapperboard size={16} aria-hidden="true" />
-          </span>
-          <span style={{ font: `700 15px/1 ${sans}`, color: T.paper, letterSpacing: '-0.01em' }}>Xeliai  Studio</span>
-        </div>
+        
+        <Link to="/" className="lp-nav__brand" aria-label="Xeliai Studio home">
+                   <BrandMark />
+                 </Link>
 
         {/* Mode toggle */}
         <div role="tablist" aria-label="Authentication mode" style={{ display: 'flex', gap: 4, marginBottom: 20, padding: 4, background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 8 }}>

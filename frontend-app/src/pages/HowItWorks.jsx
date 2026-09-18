@@ -1,402 +1,454 @@
-import Layout from '../landing/Layout'
+import React, { useState, useEffect, useRef } from "react";
+import Layout from "../landing/Layout";
 import {
-  Zap,
-  Layers,
-  Users,
-  Globe,
-  LayoutDashboard,
-  Clapperboard,
-  ShieldCheck,
-  Film,
-  ArrowRight,
-  Play,
+  FileText,
+  Sliders,
+  Image as ImageIcon,
+  Video,
+  Mic,
+  Music,
+  Disc,
+  Combine,
   Check,
-  UserPlus,
-  ShieldAlert,
-  CheckCircle2,
+  X,
+  Layers,
   Sparkles,
-} from 'lucide-react'
+  ShieldCheck,
+  ArrowRight,
+  Tv,
+  FolderKanban,
+  Cpu,
+  Clock,
+  Settings,
+} from "lucide-react";
 
-const steps = [
+const PROCESS_STEPS = [
   {
-    num: '01',
-    title: 'Concept & Scripting',
-    icon: Zap,
-    body: 'Input your campaign target or idea. The system drafts a comprehensive 11-stage production blueprint with visual scripts and shot lists.',
+    num: "01",
+    title: "Script & Shotlist Ingestion",
+    icon: FileText,
+    body: "The pipeline decomposes prompt directives or outlines into structured scene schemas, shot lists, and actor dialogue cues via write_script.",
   },
   {
-    num: '02',
-    title: 'Automated Generation',
+    num: "02",
+    title: "Dual Lane Scheduling",
     icon: Layers,
-    body: 'Tasks route dynamically to specialized media engines. Test your configurations in offline mock mode to build without spend.',
+    body: "Work splits into parallel worker pools. Visual keyframes and video prompts generate along the video lane while speech synthesis and score sync in the audio lane.",
   },
   {
-    num: '03',
-    title: 'Operator Review',
-    icon: Users,
-    body: 'Sensitive stages or distribution triggers pause safely for your sign-off. Request instant variations with prompt-level adjustments.',
-  },
-  {
-    num: '04',
-    title: 'Mix & Delivery',
-    icon: Globe,
-    body: 'Voice synthesis, soundtracks, and FFMPEG rendering automatically assemble your final output, triggering delivery webhooks.',
-  },
-]
-
-const leadLifecycleSteps = [
-  {
-    num: '01',
-    title: 'Batch Sourcing',
-    icon: UserPlus,
-    body: 'Pull down high-quality candidate metadata directly from connected directories.',
-  },
-  {
-    num: '02',
-    title: 'Scoring & Clean Sweep',
-    icon: ShieldAlert,
-    body: 'Evaluate ICP scores and sweep lists against country suppression/GDPR opt-in parameters.',
-  },
-  {
-    num: '03',
-    title: 'Human Verification',
-    icon: CheckCircle2,
-    body: 'Preview tailored email drafts, attach revision suggestions, and authorize deliveries in real-time.',
-  },
-]
-
-const appAreas = [
-  {
-    num: '1',
-    title: 'Dashboard',
-    icon: LayoutDashboard,
-    body: 'Keep tabs on running renders, account parameters, and pending human approvals in one screen.',
-  },
-  {
-    num: '2',
-    title: 'Studio Workspace',
-    icon: Clapperboard,
-    body: 'Initiate campaign tasks and monitor the active 11-stage pipeline as assets come together.',
-  },
-  {
-    num: '3',
-    title: 'Review Queue',
+    num: "03",
+    title: "Operator Approval Gates",
     icon: ShieldCheck,
-    body: 'Verify generated drafts, voice tracks, and scripts before authorizing downstream rendering.',
+    body: "Critical transition boundaries pause execution in awaiting_review state. Operators inspect draft renders, inspect prompt payloads, or reject with revisions.",
   },
   {
-    num: '4',
-    title: 'Production Logs',
-    icon: Film,
-    body: 'Follow background ffmpeg commands, voice generation states, and assembly hooks in real-time.',
+    num: "04",
+    title: "Muxing & Master Delivery",
+    icon: Combine,
+    body: "After all upstream checkpoints clear, FFMPEG workers mux video frames, ducked voice stems, and master tracks into the final distribution package.",
   },
-]
+];
+
+const TOUR_STEPS = [
+  {
+    num: "1",
+    title: "Studio",
+    icon: Tv,
+    body: "The primary execution console. Launch generation runs, observe stage transitions in real time, and trigger manual overrides.",
+  },
+  {
+    num: "2",
+    title: "Library",
+    icon: FolderKanban,
+    body: "Central repository of project drafts, rendered episodes, serialized scene state snapshots, and exported media masters.",
+  },
+  {
+    num: "3",
+    title: "Models",
+    icon: Cpu,
+    body: "Provider directory and routing constraints. Select fallback providers and inspect latency or cost benchmarks per model.",
+  },
+  {
+    num: "4",
+    title: "Activity Log",
+    icon: Clock,
+    body: "Full operational audit trail. Review stage execution durations, operator approval timestamps, and worker error logs.",
+  },
+  {
+    num: "5",
+    title: "Settings",
+    icon: Settings,
+    body: "Manage workspace access, configure provider API keys (BYOK), adjust monthly spending caps, and set default audio mux thresholds.",
+  },
+];
+
+/* SVG Lane Diagram with Video Lane (top) and Audio Lane (bottom) converging on Mix node */
+function LaneDiagram() {
+  const containerRef = useRef(null);
+  const [inView, setInView] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mq.matches);
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.4 }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Video lane path: (70, 60) -> (220, 60) -> (370, 60) -> (520, 60) -> (690, 110)
+  const videoPathD = "M 70 60 L 220 60 L 370 60 L 520 60 L 690 110";
+  // Audio lane path: (70, 60) branching to (220, 160) -> (370, 160) -> (520, 160) -> (690, 110)
+  const audioPathD = "M 70 60 C 130 60, 150 160, 220 160 L 370 160 L 520 160 L 690 110";
+
+  // Approximate path lengths for strokeDasharray
+  const videoLength = 650;
+  const audioLength = 670;
+
+  const showActive = inView || reducedMotion;
+
+  return (
+    <div ref={containerRef} className="lane-diagram-container" style={{ width: "100%", overflowX: "auto" }}>
+      <svg
+        viewBox="0 0 800 220"
+        preserveAspectRatio="xMidYMid meet"
+        style={{ width: "100%", height: "auto", minWidth: 620, display: "block" }}
+        aria-label="Two-lane architecture diagram: video and audio pipelines converging into shared mix node"
+      >
+        {/* Base connector lines */}
+        <path d={videoPathD} fill="none" stroke="var(--border)" strokeWidth="2" strokeDasharray="4 4" />
+        <path d={audioPathD} fill="none" stroke="var(--border)" strokeWidth="2" strokeDasharray="4 4" />
+
+        {/* Animated flow overlays */}
+        <path
+          d={videoPathD}
+          fill="none"
+          stroke="var(--st-done)"
+          strokeWidth="2.5"
+          strokeDasharray={videoLength}
+          strokeDashoffset={showActive ? 0 : videoLength}
+          style={{
+            transition: reducedMotion ? "none" : "stroke-dashoffset 1400ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        />
+        <path
+          d={audioPathD}
+          fill="none"
+          stroke="var(--st-done)"
+          strokeWidth="2.5"
+          strokeDasharray={audioLength}
+          strokeDashoffset={showActive ? 0 : audioLength}
+          style={{
+            transition: reducedMotion ? "none" : "stroke-dashoffset 1400ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        />
+
+        {/* Lane Headers */}
+        <text x="18" y="32" fill="var(--faint)" fontFamily="var(--mono)" fontSize="10" fontWeight="600" letterSpacing="0.08em">
+          VIDEO LANE
+        </text>
+        <text x="18" y="200" fill="var(--faint)" fontFamily="var(--mono)" fontSize="10" fontWeight="600" letterSpacing="0.08em">
+          AUDIO LANE
+        </text>
+
+        {/* Shared Ingestion Node: write_script */}
+        <g transform="translate(50, 40)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <FileText x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            write_script
+          </text>
+        </g>
+
+        {/* Video Lane Node 1: generate_prompts */}
+        <g transform="translate(200, 40)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <Sliders x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            gen_prompts
+          </text>
+        </g>
+
+        {/* Video Lane Node 2: generate_keyframes */}
+        <g transform="translate(350, 40)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <ImageIcon x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            gen_keyframes
+          </text>
+        </g>
+
+        {/* Video Lane Node 3: render_video */}
+        <g transform="translate(500, 40)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <Video x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            render_video
+          </text>
+        </g>
+
+        {/* Audio Lane Node 1: synthesize_voice */}
+        <g transform="translate(200, 140)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <Mic x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            synth_voice
+          </text>
+        </g>
+
+        {/* Audio Lane Node 2: score_music */}
+        <g transform="translate(350, 140)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <Music x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            score_music
+          </text>
+        </g>
+
+        {/* Audio Lane Node 3: master_audio */}
+        <g transform="translate(500, 140)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+          <Disc x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--muted)" fontFamily="var(--mono)" fontSize="9">
+            master_audio
+          </text>
+        </g>
+
+        {/* Shared Convergence Node: mix_audio */}
+        <g transform="translate(670, 90)">
+          <rect width="40" height="40" rx="8" fill="var(--surface)" stroke="var(--accent)" strokeWidth="1.5" />
+          <Combine x="11" y="11" width="18" height="18" color="var(--accent)" strokeWidth="1.9" />
+          <text x="20" y="54" textAnchor="middle" fill="var(--fg)" fontFamily="var(--mono)" fontSize="9" fontWeight="600">
+            mix_audio
+          </text>
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 export default function HowItWorks({ onLoginRequest }) {
   return (
     <Layout onLoginRequest={onLoginRequest}>
-      {/* Hero Intro */}
+      {/* 1. Hero Section */}
       <section className="page-hero section-reveal">
         <p className="landing-kicker">
           <span className="landing-kicker__badge">How It Works</span>
           <span className="landing-kicker__separator" aria-hidden="true" />
           <span className="landing-kicker__text">System Architecture</span>
         </p>
-        <h1>Concept to rendered media in four clear steps.</h1>
+        <h1>Eleven stages, two lanes, and a gate wherever you want one.</h1>
         <p className="page-hero__lead">
-          Our stateful pipelines handle heavy media generation processes sequentially. If a render is interrupted, it safely resumes exactly where it left off.
+          The video lane orchestrates script composition, keyframe rendering, and shot synthesis in parallel with voice and soundtrack generation. Both tracks execute independently across distinct worker pools before converging at the final master mix.
         </p>
       </section>
 
-      {/* The 4-Step Pipeline Section */}
-      <section className="page-section page-section--mb section-reveal">
+      {/* 2. Process Grid */}
+      <section className="page-section section-reveal">
         <div className="landing-process">
-          {steps.map((s, i) => (
-            <article className="landing-process__step" key={s.title} style={{ '--i': i }}>
-              {i < steps.length - 1 && (
-                <div className="landing-process__connector" aria-hidden="true">
-                  <div className="landing-process__connector-line" style={{ '--i': i }} />
-                </div>
-              )}
-              <div className="landing-process__node">
+          {PROCESS_STEPS.map((s) => {
+            const Icon = s.icon;
+            return (
+              <article className="landing-process__step" key={s.num}>
                 <span className="landing-process__num">{s.num}</span>
-                <s.icon size={18} aria-hidden="true" />
-              </div>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </article>
-          ))}
+                <div className="landing-process__node">
+                  <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
+                </div>
+                <h3>{s.title}</h3>
+                <p>{s.body}</p>
+              </article>
+            );
+          })}
         </div>
+      </section>
 
-        {/* Visual Pipeline Simulator Grid */}
-        <div className="landing-workflow__demo section-reveal" style={{ marginTop: '24px' }}>
-          <div className="workflow-annotation">
-            <p>
-              <strong>Stateful Orchestration:</strong> Behind the scenes, we structure your input into distinct blocks. You can view, re-run, or fine-tune any single stage without forcing a full rebuild of your entire project.
-            </p>
-          </div>
-          <div className="unified-grid" style={{ height: '100%', alignItems: 'center' }}>
+      {/* 3. Lane Diagram (Animated SVG) */}
+      <section className="page-section section-reveal">
+        <div style={{ marginBottom: 20 }}>
+          <p className="landing-kicker">
+            <span className="landing-kicker__badge">Pipeline Topology</span>
+            <span className="landing-kicker__separator" aria-hidden="true" />
+            <span className="landing-kicker__text">Concurrent Execution</span>
+          </p>
+          <h2 style={{ margin: "6px 0 10px" }}>Independent tracks converging on the master mux.</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.94rem", lineHeight: 1.6, maxWidth: "68ch" }}>
+            Audio stems and video frames do not wait on each other. Workers execute against their respective queues, allowing video reruns to re-use pre-rendered audio or vice versa.
+          </p>
+        </div>
+        <div className="landing-workflow__demo">
+          <LaneDiagram />
+        </div>
+      </section>
+
+      {/* 4. Routing Demo (Static) */}
+      <section className="page-section section-reveal">
+        <div style={{ marginBottom: 20 }}>
+          <p className="landing-kicker">
+            <span className="landing-kicker__badge">Routing Matrix</span>
+            <span className="landing-kicker__separator" aria-hidden="true" />
+            <span className="landing-kicker__text">Stage State Transitions</span>
+          </p>
+          <h2 style={{ margin: "6px 0 10px" }}>Stateful checkpoints at every boundary.</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.94rem", lineHeight: 1.6, maxWidth: "68ch" }}>
+            Each stage receives serialised inputs and writes versioned artifacts to storage. Upstream failures never corrupt prior completed tasks.
+          </p>
+        </div>
+        <div className="landing-workflow__demo">
+          <div className="unified-grid" style={{ height: "100%", alignItems: "center" }}>
             <div className="unified-node">
-              <span>Scripting</span>
+              <span>write_script</span>
+            </div>
+            <div className="unified-connector" aria-hidden="true" />
+            <div className="unified-node">
+              <span>gen_keyframes</span>
             </div>
             <div className="unified-connector" aria-hidden="true" />
             <div className="unified-node unified-node--active">
-              <span>AI Gen</span>
+              <span>render_video</span>
             </div>
             <div className="unified-connector" aria-hidden="true" />
             <div className="unified-node">
-              <span>Voice</span>
-            </div>
-            <div className="unified-connector" aria-hidden="true" />
-            <div className="unified-node">
-              <span>Muxing</span>
+              <span>mix_audio</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Deep Dive into App Areas */}
-      <section className="page-section section-reveal" style={{ paddingBottom: '120px' }}>
-        <p className="landing-kicker">
-          <span className="landing-kicker__badge">In the Studio</span>
-          <span className="landing-kicker__separator" aria-hidden="true" />
-          <span className="landing-kicker__text">Where you create</span>
-        </p>
-        <h2 className="app-tour__heading">A guided view of your workspaces.</h2>
-        <p className="page-hero__lead app-tour__lead">
-          Every tools is situated exactly where you need it, organized linearly from ideas to asset outputs.
-        </p>
-
-        {/* Step Cards with Timeline Rail */}
-        <div className="app-tour">
-          <div className="app-tour__rail" aria-hidden="true" />
-          {appAreas.map((a, idx) => (
-            <article className="app-tour__step" key={a.title}>
-              <div className="app-tour__marker">
-                <span>{a.num}</span>
-              </div>
-              <div className="app-tour__icon" style={{ marginTop: '12px' }}>
-                <a.icon size={16} aria-hidden="true" />
-              </div>
-              <h3>{a.title}</h3>
-              <p>{a.body}</p>
-            </article>
-          ))}
-        </div>
-
-        {/* Mini UI Previews Grid to Visualize the Steps */}
-        <div className="showcase-grid section-reveal" style={{ marginTop: '48px' }}>
-          {/* Dashboard Preview Component */}
-          <div className="skeleton-panel">
-            <div className="skeleton-panel__head">
-              <span className="skeleton-panel__title">
-                <span className="skeleton-panel__live-icon" aria-hidden="true">●</span> Active Tasks
-              </span>
-              <span className="skeleton-panel__badge is-live">
-                <span className="live-dot" aria-hidden="true" /> rendering
-              </span>
-            </div>
-            <div className="skeleton-queue">
-              <div className="skeleton-row">
-                <span className="skeleton-row__label">Scene #01</span>
-                <div className="skeleton-row__track">
-                  <div className="skeleton-row__bar is-done" style={{ width: '100%' }} />
-                </div>
-                <span className="skeleton-row__status">Success</span>
-              </div>
-              <div className="skeleton-row">
-                <span className="skeleton-row__label">Scene #02</span>
-                <div className="skeleton-row__track">
-                  <div className="skeleton-row__bar is-loading" style={{ width: '65%' }} />
-                </div>
-                <span className="skeleton-row__status">Rendering</span>
-              </div>
-            </div>
+      {/* 5. Review Mode Explainer */}
+      <section className="page-section section-reveal">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 32, alignItems: "center" }}>
+          <div>
+            <p className="landing-kicker">
+              <span className="landing-kicker__badge">Human Intervention</span>
+              <span className="landing-kicker__separator" aria-hidden="true" />
+              <span className="landing-kicker__text">Review Gates</span>
+            </p>
+            <h2 style={{ margin: "8px 0 14px" }}>What awaiting_review means at the orchestration layer.</h2>
+            <p style={{ color: "var(--muted)", fontSize: "0.94rem", lineHeight: 1.65, marginBottom: 14 }}>
+              When a stage finishes in a gated configuration, the task manager serialises current assets to persistent disk and places the job in awaiting_review status.
+            </p>
+            <p style={{ color: "var(--muted)", fontSize: "0.94rem", lineHeight: 1.65 }}>
+              No worker processes stay spun up, and no compute or token billing occurs while the task pauses. You inspect the output in the console, edit prompts if required, and either resume downstream stages or reject back to a prior checkpoint.
+            </p>
           </div>
 
-          {/* Review Queue Preview Component */}
           <div className="trust-visual__frame">
             <div className="trust-visual__header">
-              <span>Approval Required</span>
-              <span className="trust-visual__status">Step 03 / 04</span>
+              <ShieldCheck size={16} strokeWidth={2} />
+              <span>Checkpoint: Scene 03 Keyframes</span>
+              <span className="trust-visual__status">awaiting_review</span>
             </div>
             <div className="trust-visual__body">
               <div className="trust-visual__row">
-                <span className="trust-visual__label">AI Script Draft</span>
-                <span className="trust-visual__value">Review complete</span>
+                <span className="trust-visual__label">Stage Key</span>
+                <span className="trust-visual__value" style={{ fontFamily: "var(--mono)", fontSize: "0.8rem" }}>generate_keyframes</span>
               </div>
               <div className="trust-visual__row">
-                <span className="trust-visual__label">Voice Cast Overlap</span>
+                <span className="trust-visual__label">Worker Cost</span>
+                <span className="trust-visual__value" style={{ fontFamily: "var(--mono)", fontSize: "0.8rem" }}>$0.042 (retained)</span>
+              </div>
+              <div className="trust-visual__row">
+                <span className="trust-visual__label">Downstream Gate</span>
                 <span className="trust-visual__value trust-visual__value--ok">
-                  <Check size={14} /> Ready
+                  <Check size={14} /> render_video paused
                 </span>
               </div>
               <div className="trust-visual__actions">
-                <button type="button" className="trust-btn trust-btn--deny">Edit Prompt</button>
-                <button type="button" className="trust-btn trust-btn--approve">Approve Block</button>
+                <button
+                  type="button"
+                  className="landing-button landing-button--secondary"
+                  style={{ flex: 1, padding: "8px 16px", fontSize: "0.82rem" }}
+                  tabIndex={-1}
+                >
+                  <X size={14} style={{ marginRight: 6 }} />
+                  Reject &amp; Edit
+                </button>
+                <button
+                  type="button"
+                  className="landing-button landing-button--primary"
+                  style={{ flex: 1, padding: "8px 16px", fontSize: "0.82rem" }}
+                  tabIndex={-1}
+                >
+                  <Check size={14} style={{ marginRight: 6 }} />
+                  Approve Stage
+                </button>
               </div>
-            </div>
-          </div>
-
-          {/* Workspace Sequence Preview Component */}
-          <div className="skeleton-panel">
-            <div className="skeleton-panel__head">
-              <span className="skeleton-panel__title">Project Workspace</span>
-              <span className="skeleton-panel__badge">Campaign #38</span>
-            </div>
-            <div className="skeleton-queue" style={{ gap: '16px' }}>
-              <div className="skeleton-queue__item">
-                <div className="skeleton-queue__thumb is-done">
-                  <Play size={14} className="skeleton-queue__thumb-play" />
-                </div>
-                <div className="skeleton-queue__meta">
-                  <span className="is-text">audio_layer_primary.mp3</span>
-                  <span className="is-text is-muted">Generated voice clip</span>
-                </div>
-              </div>
-              <div className="skeleton-queue__item">
-                <div className="skeleton-queue__thumb is-loading" />
-                <div className="skeleton-queue__meta">
-                  <span className="skeleton-line" />
-                  <span className="skeleton-line skeleton-line--short" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Terminal Logs Preview Component */}
-          <div className="terminal-logs" style={{ margin: 0, height: '100%', minHeight: '140px' }}>
-            <div className="terminal-logs-header">
-              <span className="terminal-dot red" />
-              <span className="terminal-dot yellow" />
-              <span className="terminal-dot green" />
-              <span className="terminal-title">system-worker-01</span>
-            </div>
-            <div className="terminal-log-line">
-              <span className="terminal-time">[08:44:01]</span>
-              <span className="terminal-task">fetching_metadata</span>
-              <span className="terminal-result">OK</span>
-            </div>
-            <div className="terminal-log-line">
-              <span className="terminal-time">[08:44:12]</span>
-              <span className="terminal-task">generating_waveform</span>
-              <span className="terminal-result">OK</span>
-            </div>
-            <div className="terminal-log-line">
-              <span className="terminal-time">[08:44:28]</span>
-              <span className="terminal-task">compiling_ffmpeg_mux</span>
-              <span className="terminal-result" style={{ color: 'var(--accent)' }}>RUNNING</span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Outreach & Lead Control Room Section */}
-      <section className="page-section section-reveal" style={{ paddingBottom: '120px' }}>
-        <p className="landing-kicker">
-          <span className="landing-kicker__badge">Lead Intelligence</span>
-          <span className="landing-kicker__separator" aria-hidden="true" />
-          <span className="landing-kicker__text">Outreach &amp; Compliance Engine</span>
-        </p>
-        <h2 className="app-tour__heading">Outreach &amp; Lead Control Room</h2>
-        <p className="page-hero__lead app-tour__lead">
-          Unified lead acquisition and compliance engine: source candidates, execute scoring modules, and approve generated outreach inline.
-        </p>
-
-        {/* Guided Tour Banner */}
-        <div
-          className="workflow-annotation"
-          style={{
-            marginTop: '28px',
-            marginBottom: '28px',
-            background: 'color-mix(in srgb, var(--accent) 8%, var(--surface))',
-            borderColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
-            borderRadius: '12px',
-            padding: '20px 24px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-            <Sparkles size={20} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: '2px' }} />
-            <div>
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--fg)', fontFamily: 'var(--body)' }}>
-                Quick Guided Tour: The Lead Lifecycle
-              </h3>
-              <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px', lineHeight: 1.6 }}>
-                New to the platform? Your leads move smoothly through three stages of verification before reaching their destination:
-              </p>
-            </div>
-          </div>
+      {/* 6. App Tour */}
+      <section className="page-section section-reveal">
+        <div style={{ marginBottom: 28 }}>
+          <p className="landing-kicker">
+            <span className="landing-kicker__badge">Interface Layout</span>
+            <span className="landing-kicker__separator" aria-hidden="true" />
+            <span className="landing-kicker__text">Guided Tour</span>
+          </p>
+          <h2 style={{ margin: "6px 0 10px" }}>The workspaces supporting the pipeline.</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.94rem", lineHeight: 1.6 }}>
+            Every section of the application corresponds to a distinct phase of production and governance.
+          </p>
         </div>
 
-        {/* 3-Step Lead Lifecycle Grid */}
-        <div
-          className="landing-process"
-          style={{
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            marginBottom: '32px',
-          }}
-        >
-          {leadLifecycleSteps.map((s, i) => (
-            <article className="landing-process__step" key={s.title} style={{ '--i': i }}>
-              {i < leadLifecycleSteps.length - 1 && (
-                <div className="landing-process__connector" aria-hidden="true">
-                  <div className="landing-process__connector-line" style={{ '--i': i }} />
+        <div className="app-tour">
+          <div className="app-tour__rail" aria-hidden="true" />
+          {TOUR_STEPS.map((step) => {
+            const StepIcon = step.icon;
+            return (
+              <article className="app-tour__step" key={step.num}>
+                <div className="app-tour__marker">
+                  <span>{step.num}</span>
                 </div>
-              )}
-              <div className="landing-process__node">
-                <span className="landing-process__num">{s.num}</span>
-                <s.icon size={18} aria-hidden="true" />
-              </div>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </article>
-          ))}
+                <div className="app-tour__icon" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                  <StepIcon size={16} strokeWidth={2} aria-hidden="true" />
+                  <h3 style={{ margin: 0, fontSize: "1.05rem" }}>{step.title}</h3>
+                </div>
+                <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+                  {step.body}
+                </p>
+              </article>
+            );
+          })}
         </div>
+      </section>
 
-        {/* Pipeline Simulation Grid */}
-        <div className="landing-workflow__demo section-reveal" style={{ marginTop: '16px' }}>
-          <div className="workflow-annotation">
-            <p>
-              <strong>Compliant Outbound Flow:</strong> Sourced candidates pass through rigorous ICP evaluation and regional suppression sweeps before AI models draft personalized outreach variants for human sign-off.
-            </p>
+      {/* 7. Closing CTA */}
+      <section className="landing-final page-section--mb section-reveal">
+        <div className="landing-final__copy">
+          <h2>Ready to inspect the pipeline in action?</h2>
+          <p>
+            Launch an evaluation run in offline mock mode without connecting third-party API credentials.
+          </p>
+          <div className="landing-final__actions">
+            <button
+              type="button"
+              className="landing-button landing-button--primary"
+              onClick={onLoginRequest}
+            >
+              <span className="landing-button__text" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                Open Studio Console
+                <ArrowRight size={15} aria-hidden="true" />
+              </span>
+            </button>
           </div>
-          <div className="unified-grid" style={{ height: '100%', alignItems: 'center' }}>
-            <div className="unified-node">
-              <span>Directory</span>
-            </div>
-            <div className="unified-connector" aria-hidden="true" />
-            <div className="unified-node unified-node--active">
-              <span>ICP Score</span>
-            </div>
-            <div className="unified-connector" aria-hidden="true" />
-            <div className="unified-node">
-              <span>Opt-In Sweep</span>
-            </div>
-            <div className="unified-connector" aria-hidden="true" />
-            <div className="unified-node">
-              <span>HITL Review</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Custom Premium CTA */}
-        <div className="app-tour__cta" style={{ marginTop: '56px' }}>
-          <div>
-            <h3>Ready to draft your first project?</h3>
-            <p>Generate, script, and preview in offline mock mode completely free.</p>
-          </div>
-          <button 
-            type="button" 
-            className="landing-button landing-button--primary" 
-            onClick={onLoginRequest}
-          >
-            <span className="landing-button__glow" />
-            <span className="landing-button__text" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              Get Started <ArrowRight size={16} aria-hidden="true" />
-            </span>
-          </button>
         </div>
       </section>
     </Layout>
-  )
+  );
 }
