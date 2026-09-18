@@ -44,11 +44,11 @@ import vergeImg from '../assets/showcase/verge.webp';
 import recapImg from '../assets/showcase/recap.webp';
 import brainstormingImg from '../assets/showcase/brainstorming.webp';
 
-import filmstripEngineerImg from "../assets/landing/img3.jpg";
-import filmstripStylizedWomanImg from "../assets/landing/img4.jpg";
-import filmstripBoyRobotImg from "../assets/landing/img5.jpg";
-import filmstripDevLaptopImg from "../assets/landing/img1.jpg";
-import filmstripCollaborateImg from "../assets/landing/img2.jpg";
+import filmstripEngineerImg from "../assets/landing/img3.webp";
+import filmstripStylizedWomanImg from "../assets/landing/img4.webp";
+import filmstripBoyRobotImg from "../assets/landing/img5.webp";
+import filmstripDevLaptopImg from "../assets/landing/img1.webp";
+import filmstripCollaborateImg from "../assets/landing/img2.webp";
 /* ═══════════════════════════════════════════════════════════════════
 
 /* ═══════════════════════════════════════════════════════════════════════
