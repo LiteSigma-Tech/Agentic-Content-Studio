@@ -21,8 +21,8 @@ import {
   Trash2,
   Sparkles,
   Zap,
-  Eye,
-  EyeOff
+  Square,
+  Download
 } from "lucide-react";
 import { studioApiCalls } from "../../api";
 import {
@@ -98,6 +98,20 @@ const PHASES = [
   }
 ];
 
+async function downloadMedia(url, filename) {
+  try {
+    const r = await fetch(url);
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch {
+    window.open(url, "_blank");
+  }
+}
+
 function StageOutputPreview({ stage, project }) {
   const shots = project?.episode?.scenes?.flatMap(sc => sc.shots) ?? [];
   const mediaUrl = studioApiCalls.mediaUrl;
@@ -108,14 +122,27 @@ function StageOutputPreview({ stage, project }) {
     </div>
   );
 
-  const imgGrid = (items) => (
+  const imgGrid = (items, ext = "png") => (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
       {items.map(({ label, uri }) => uri && (
         <div key={label} style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-          <img
-            src={mediaUrl(uri)} alt={label}
-            style={{ width: 140, height: 90, objectFit: "cover", borderRadius: T.radiusMd, border: `1px solid ${T.line2}` }}
-          />
+          <div style={{ position: "relative" }}>
+            <img
+              src={mediaUrl(uri)} alt={label}
+              style={{ width: 140, height: 90, objectFit: "cover", borderRadius: T.radiusMd, border: `1px solid ${T.line2}`, display: "block" }}
+            />
+            <button
+              onClick={() => downloadMedia(mediaUrl(uri), `${label.toLowerCase().replace(/\s+/g, "_")}.${ext}`)}
+              title={`Download ${label}`}
+              style={{
+                position: "absolute", top: 4, right: 4,
+                background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 4,
+                padding: "4px 6px", cursor: "pointer", display: "flex", alignItems: "center", color: "#fff",
+              }}
+            >
+              <Download size={11} />
+            </button>
+          </div>
           <span style={{ font: `400 10px/1 ${mono}`, color: T.faint }}>{label}</span>
         </div>
       ))}
@@ -196,12 +223,25 @@ function StageOutputPreview({ stage, project }) {
     if (!clips.length) return wrap(<span style={{ font: `400 11px/1 ${mono}`, color: T.faint }}>No clips found.</span>);
     return wrap(
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-        {clips.map(sh => (
+        {clips.map((sh, i) => (
           <div key={sh.id} style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-            <video
-              src={mediaUrl(sh.clip_uri)} controls
-              style={{ width: 180, height: 110, objectFit: "cover", borderRadius: T.radiusMd, border: `1px solid ${T.line2}` }}
-            />
+            <div style={{ position: "relative" }}>
+              <video
+                src={mediaUrl(sh.clip_uri)} controls
+                style={{ width: 180, height: 110, objectFit: "cover", borderRadius: T.radiusMd, border: `1px solid ${T.line2}`, display: "block" }}
+              />
+              <button
+                onClick={() => downloadMedia(mediaUrl(sh.clip_uri), `clip_${sh.id}.mp4`)}
+                title={`Download ${sh.id}`}
+                style={{
+                  position: "absolute", top: 4, right: 4,
+                  background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 4,
+                  padding: "4px 6px", cursor: "pointer", display: "flex", alignItems: "center", color: "#fff",
+                }}
+              >
+                <Download size={11} />
+              </button>
+            </div>
             <span style={{ font: `400 10px/1 ${mono}`, color: T.faint }}>{sh.id}</span>
           </div>
         ))}
@@ -253,6 +293,7 @@ export default function StudioCommandCenter() {
   const [concept, setConcept] = useState("");
   const [genre, setGenre] = useState("kids_cartoon");
   const [reviewMode, setReviewMode] = useState(false);
+  const [targetDuration, setTargetDuration] = useState(30);
 
   const { data: genres = [] } = useQuery({
     queryKey: ["genres"],
@@ -263,6 +304,8 @@ export default function StudioCommandCenter() {
   const [creating, setCreating] = useState(false);
   const [actionError, setActionError] = useState(null);
   const [resumingId, setResumingId] = useState(null);
+  const [stoppingId, setStoppingId] = useState(null);
+  const [rerunQueued, setRerunQueued] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
@@ -311,6 +354,7 @@ export default function StudioCommandCenter() {
     } else {
       localStorage.removeItem(ACTIVE_PROJECT_KEY);
     }
+    setRerunQueued(false);
   }, [selectedId]);
 
   useEffect(() => {
@@ -356,6 +400,12 @@ export default function StudioCommandCenter() {
     }
   }, [project, projectStages]);
 
+  useEffect(() => {
+    if (rerunQueued && isProjectRunning) {
+      setRerunQueued(false);
+    }
+  }, [rerunQueued, isProjectRunning]);
+
   const approve = useMutation({
     mutationFn: ({ id, stage, note }) => studioApiCalls.approveStage(id, stage, note),
     onSuccess: () => {
@@ -390,6 +440,7 @@ export default function StudioCommandCenter() {
       });
     },
     onMutate: async ({ id, stage }) => {
+      setRerunQueued(true);
       await qc.cancelQueries(["studio-command-center-project", id]);
       const previousProject = qc.getQueryData(["studio-command-center-project", id]);
 
@@ -419,6 +470,7 @@ export default function StudioCommandCenter() {
       return { previousProject };
     },
     onError: (err, variables, context) => {
+      setRerunQueued(false);
       if (context?.previousProject) {
         qc.setQueryData(["studio-command-center-project", variables.id], context.previousProject);
       }
@@ -494,7 +546,7 @@ export default function StudioCommandCenter() {
     setCreateError(null);
     setCreating(true);
     try {
-      const { id } = await studioApiCalls.createProject(concept, genre, reviewMode);
+      const { id } = await studioApiCalls.createProject(concept, genre, reviewMode, targetDuration || null);
       await studioApiCalls.runProject(id, { background: true });
       setConcept("");
       setShowCreateForm(false);
@@ -529,6 +581,21 @@ export default function StudioCommandCenter() {
       setActionError(errorGuidance(e, "Pipeline did not resume."));
     } finally {
       setResumingId(null);
+    }
+  }
+
+  async function handleStop(id) {
+    setActionError(null);
+    setStoppingId(id);
+    try {
+      await studioApiCalls.cancelProject(id);
+      await new Promise((r) => setTimeout(r, 800));
+      qc.invalidateQueries(["studio-command-center-projects"]);
+      qc.invalidateQueries(["studio-command-center-project", id]);
+    } catch (e) {
+      setActionError(errorGuidance(e, "Stop request failed."));
+    } finally {
+      setStoppingId(null);
     }
   }
 
@@ -869,49 +936,86 @@ export default function StudioCommandCenter() {
                   <label style={{ display: "block", font: `600 11px/1 ${mono}`, color: T.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     2. Select Video Genre
                   </label>
-                  <div
+                  <select
+                    value={genre}
+                    disabled={creating}
+                    onChange={(e) => setGenre(e.target.value)}
                     style={{
-                      display: "flex",
-                      gap: 8,
-                      overflowX: "auto",
-                      padding: "4px 6px 10px 6px",
-                      margin: "-4px -6px 0 -6px",
-                      scrollbarWidth: "none",
-                      scrollPadding: "6px"
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: T.radiusMd,
+                      background: T.ink,
+                      border: `1px solid ${T.line2}`,
+                      color: T.paper,
+                      font: `500 13px/1 ${mono}`,
+                      cursor: creating ? "not-allowed" : "pointer",
+                      appearance: "auto",
                     }}
-                    className="clean_scrollbar_wrapper"
                   >
-                    {GENRES.map((g) => {
-                      const active = genre === g;
-                      const details = GENRE_DETAILS[g] || { label: g, desc: "Pipeline format rendering" };
+                    {(genres.length > 0 ? genres : GENRES.map(g => ({ value: g, label: GENRE_DETAILS[g]?.label || g }))).map((g) => {
+                      const value = typeof g === "string" ? g : g.value;
+                      const label = typeof g === "string" ? (GENRE_DETAILS[g]?.label || g) : g.label;
                       return (
-                        <button
-                          key={g}
-                          type="button"
-                          onClick={() => setGenre(g)}
-                          disabled={creating}
-                          title={details.desc}
-                          style={{
-                            flex: "0 0 auto",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            padding: "10px 16px",
-                            borderRadius: T.radiusMd,
-                            background: active ? `${T.violet}22` : `${T.ink}40`,
-                            border: `1px solid ${active ? T.violet : T.line2}`,
-                            boxShadow: active ? `0 0 0 1px ${T.violet}` : "none",
-                            color: active ? T.paper : T.muted,
-                            cursor: creating ? "not-allowed" : "pointer",
-                            font: `600 11px/1 ${mono}`,
-                            transition: "all 0.15s ease",
-                            outline: "none"
-                          }}
-                        >
-                          <span>{details.label}</span>
-                        </button>
+                        <option key={value} value={value}>{label}</option>
                       );
                     })}
+                  </select>
+                  {genre && GENRE_DETAILS[genre] && (
+                    <div style={{ font: `400 11px/1.4 ${mono}`, color: T.faint, marginTop: 6 }}>
+                      {GENRE_DETAILS[genre].desc}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{ display: "block", font: `600 11px/1 ${mono}`, color: T.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    3. Target Duration
+                  </label>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {[15, 30, 45, 60, 90].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        disabled={creating}
+                        onClick={() => setTargetDuration(s)}
+                        style={{
+                          padding: "7px 14px",
+                          borderRadius: T.radiusMd,
+                          background: targetDuration === s ? `${T.amber}22` : `${T.ink}40`,
+                          border: `1px solid ${targetDuration === s ? T.amber : T.line2}`,
+                          color: targetDuration === s ? T.amber : T.muted,
+                          font: `600 11px/1 ${mono}`,
+                          cursor: creating ? "not-allowed" : "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {s}s
+                      </button>
+                    ))}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input
+                        type="number"
+                        min={10}
+                        max={180}
+                        value={targetDuration}
+                        disabled={creating}
+                        onChange={(e) => setTargetDuration(Math.max(10, Math.min(180, Number(e.target.value))))}
+                        style={{
+                          width: 60,
+                          padding: "6px 8px",
+                          borderRadius: T.radiusMd,
+                          background: T.ink,
+                          border: `1px solid ${T.line2}`,
+                          color: T.paper,
+                          font: `500 12px/1 ${mono}`,
+                          textAlign: "center",
+                        }}
+                      />
+                      <span style={{ font: `500 11px/1 ${mono}`, color: T.faint }}>s</span>
+                    </div>
+                  </div>
+                  <div style={{ font: `400 10px/1.4 ${mono}`, color: T.faint, marginTop: 6 }}>
+                    Script writer will target ~{targetDuration}s · ~{Math.round(targetDuration / 5)} shots
                   </div>
                 </div>
 
@@ -1027,7 +1131,7 @@ export default function StudioCommandCenter() {
           <EmptyState title="Nothing waiting on review" body="All active pipelines are running smoothly." />
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 12 }}>
-            {awaiting.slice(0, 4).map(({ project: p, stage }) => (
+            {(showAllReview ? awaiting : awaiting.slice(0, 4)).map(({ project: p, stage }) => (
               <motion.div key={p.id} layout transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 25 }}>
                 <Panel style={{ padding: 14, borderLeft: `3px solid ${T.hitl}`, height: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -1178,22 +1282,32 @@ export default function StudioCommandCenter() {
                       <Eyebrow>Regenerate from stage</Eyebrow>
                     </div>
                     {isProjectRunning && (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 5,
-                          font: `600 10px/1 ${mono}`,
-                          color: T.amber,
-                          background: `${T.amber}18`,
-                          padding: "3px 8px",
-                          borderRadius: 4,
-                          border: `1px solid ${T.amber}40`,
-                        }}
-                      >
-                        <Loader2 size={11} className="spin_loader" />
-                        PIPELINE ACTIVE
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            font: `600 10px/1 ${mono}`,
+                            color: T.amber,
+                            background: `${T.amber}18`,
+                            padding: "3px 8px",
+                            borderRadius: 4,
+                            border: `1px solid ${T.amber}40`,
+                          }}
+                        >
+                          <Loader2 size={11} className="spin_loader" />
+                          PIPELINE ACTIVE
+                        </span>
+                        <Btn
+                          kind="danger"
+                          icon={stoppingId === project.id ? Loader2 : Square}
+                          disabled={stoppingId === project.id}
+                          onClick={() => handleStop(project.id)}
+                        >
+                          {stoppingId === project.id ? "Stopping…" : "Stop Run"}
+                        </Btn>
+                      </div>
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -1216,10 +1330,10 @@ export default function StudioCommandCenter() {
                     </select>
                     <Btn
                       kind={isSelectedStageRunning ? "ghost" : "danger"}
-                      icon={forceRerun.isPending ? undefined : (isSelectedStageRunning ? Loader2 : (isProjectRunning ? Zap : RotateCcw))}
-                      disabled={!rerunStage || forceRerun.isPending || isSelectedStageRunning}
+                      icon={(forceRerun.isPending || rerunQueued) ? undefined : (isSelectedStageRunning ? Loader2 : (isProjectRunning ? Zap : RotateCcw))}
+                      disabled={!rerunStage || forceRerun.isPending || rerunQueued || isSelectedStageRunning}
                       onClick={() => {
-                        if (!rerunStage || forceRerun.isPending || isSelectedStageRunning) return;
+                        if (!rerunStage || forceRerun.isPending || rerunQueued || isSelectedStageRunning) return;
                         if (isProjectRunning) {
                           setShowInterruptModal(true);
                         } else {
@@ -1227,10 +1341,10 @@ export default function StudioCommandCenter() {
                         }
                       }}
                     >
-                      {forceRerun.isPending ? (
+                      {(forceRerun.isPending || rerunQueued) ? (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                           <Loader2 size={13} className="spin_loader" />
-                          {forceRerun.variables?.isInterrupting ? "Cancelling & Restarting…" : "Regenerating…"}
+                          {forceRerun.variables?.isInterrupting ? "Cancelling & Restarting…" : "Starting…"}
                         </span>
                       ) : isSelectedStageRunning ? (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -1246,7 +1360,7 @@ export default function StudioCommandCenter() {
                   </div>
                 </div>
 
-                {forceRerun.isPending && (
+                {(forceRerun.isPending || rerunQueued) && (
                   <div
                     style={{
                       marginTop: 12,
@@ -1264,7 +1378,7 @@ export default function StudioCommandCenter() {
                       <span style={{ font: `600 12px/1.2 ${sans}`, color: T.paper }}>
                         {forceRerun.variables?.isInterrupting
                           ? `Interrupting active run & restarting from "${STAGES.find(([, , n]) => n === rerunStage)?.[0] || rerunStage}"`
-                          : `Regenerating pipeline from "${STAGES.find(([, , n]) => n === rerunStage)?.[0] || rerunStage}"`}
+                          : `Starting pipeline from "${STAGES.find(([, , n]) => n === rerunStage)?.[0] || rerunStage}"…`}
                       </span>
                       <span style={{ font: `400 11px/1.2 ${mono}`, color: T.amber }}>
                         {forceRerun.variables?.isInterrupting
@@ -1523,9 +1637,26 @@ export default function StudioCommandCenter() {
                 </Panel>
               ) : (
                 <Panel style={{ padding: 18, height: "100%", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <Film color={T.teal} size={15} />
-                    <h4 style={{ font: `700 14px/1 ${sans}`, color: T.paper, margin: 0 }}>Final Video Output</h4>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Film color={T.teal} size={15} />
+                      <h4 style={{ font: `700 14px/1 ${sans}`, color: T.paper, margin: 0 }}>Final Video Output</h4>
+                    </div>
+                    {isProjectDone && (
+                      <a
+                        href={studioApiCalls.videoUrl ? studioApiCalls.videoUrl(project.id) : studioApiCalls.mediaUrl(project.final_av_uri || project.final_uri)}
+                        download={`${project.title || project.id}.mp4`}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "5px 10px", borderRadius: T.radiusMd,
+                          background: `${T.teal}18`, border: `1px solid ${T.teal}55`,
+                          color: T.teal, font: `600 11px/1 ${mono}`,
+                          textDecoration: "none", cursor: "pointer",
+                        }}
+                      >
+                        <Download size={12} /> Download
+                      </a>
+                    )}
                   </div>
 
                   <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
@@ -1715,7 +1846,7 @@ export default function StudioCommandCenter() {
 
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ font: `500 11px/1 ${mono}`, color: T.paper }}>
-                            {p.id.slice(0, 8)}
+                            {p.id}
                           </span>
                           <span style={{ font: `400 11px/1 ${sans}`, color: T.faint }}>
                             ({p.title || "Untitled Episode"})

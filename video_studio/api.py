@@ -94,6 +94,22 @@ def run(project_id: str, req: RunReq, bg: BackgroundTasks):
     return pipeline.status(project_id)
 
 
+@app.delete("/v1/projects/{project_id}")
+async def delete_project(project_id: str):
+    if not store.exists(project_id):
+        raise HTTPException(404, "project not found")
+    await store.adelete(project_id)
+    return {"deleted": project_id}
+
+
+@app.post("/v1/projects/{project_id}/cancel")
+def cancel(project_id: str):
+    if not store.exists(project_id):
+        raise HTTPException(404, "project not found")
+    pipeline.request_stop(project_id)
+    return {"status": "stop_requested", "id": project_id}
+
+
 @app.post("/v1/projects/{project_id}/stages/{stage_name}/approve")
 def approve_stage(project_id: str, stage_name: str, req: ApproveReq,
                   bg: BackgroundTasks):

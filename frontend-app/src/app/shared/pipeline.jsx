@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import PropTypes from "prop-types";
-import { Check, X, RotateCcw } from "lucide-react";
+import { Check, X, RotateCcw, Download } from "lucide-react";
 import { T, mono, sans, SC, Eyebrow, Lamp, Panel, Btn } from "./ui";
 import { studioApiCalls } from "../../api";
 
@@ -149,6 +149,40 @@ SignalChain.propTypes = {
   lane: PropTypes.oneOf(["video", "audio"]),
 };
 
+async function downloadMedia(url, filename) {
+  try {
+    const r = await fetch(url);
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch {
+    window.open(url, "_blank");
+  }
+}
+
+function DownloadBtn({ url, filename }) {
+  return (
+    <button
+      onClick={() => downloadMedia(url, filename)}
+      title={`Download ${filename}`}
+      style={{
+        position: "absolute", top: 6, right: 6,
+        background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 4,
+        padding: "5px 7px", cursor: "pointer",
+        display: "flex", alignItems: "center", color: "#fff",
+        opacity: 0.85,
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+      onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
+    >
+      <Download size={12} />
+    </button>
+  );
+}
+
 /** PromptBox — ported verbatim from PlatformConsole.jsx. A collapsible
  *  "prompt sent to model" inspector, used inside StageReviewBanner's
  *  per-stage summaries so reviewers can see exactly what was sent to
@@ -219,15 +253,20 @@ export function StageReviewBanner({ project, stageName, onApprove, onReject, dis
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
             {chars.map((ch) => (
               <div key={ch.name}>
-                {ch.reference_uri
-                  ? <img src={studioApiCalls.mediaUrl(ch.reference_uri)} alt={ch.name}
-                         style={{ width: "100%", aspectRatio: "1", objectFit: "cover",
-                                  borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
-                  : <div style={{ width: "100%", aspectRatio: "1", background: T.panel2, borderRadius: 6,
-                                  display: "grid", placeItems: "center" }}>
-                      <span style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>no image</span>
-                    </div>
-                }
+                <div style={{ position: "relative" }}>
+                  {ch.reference_uri
+                    ? <img src={studioApiCalls.mediaUrl(ch.reference_uri)} alt={ch.name}
+                           style={{ width: "100%", aspectRatio: "1", objectFit: "cover",
+                                    borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
+                    : <div style={{ width: "100%", aspectRatio: "1", background: T.panel2, borderRadius: 6,
+                                    display: "grid", placeItems: "center" }}>
+                        <span style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>no image</span>
+                      </div>
+                  }
+                  {ch.reference_uri && (
+                    <DownloadBtn url={studioApiCalls.mediaUrl(ch.reference_uri)} filename={`${ch.name.toLowerCase().replace(/\s+/g, "_")}.png`} />
+                  )}
+                </div>
                 <div style={{ font: `600 10px/1.3 ${sans}`, color: T.muted, marginTop: 5,
                               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {ch.name}
@@ -243,8 +282,8 @@ export function StageReviewBanner({ project, stageName, onApprove, onReject, dis
     if (stageName === "generate_keyframes") {
       const keyed = allShots.filter((s) => s.keyframe_uri);
       return keyed.length === 0 ? null : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {keyed.slice(0, 8).map((s, i) => (
+        <div style={{ maxHeight: 520, overflowY: "auto", display: "grid", gap: 12, paddingRight: 4 }}>
+          {keyed.map((s, i) => (
             <div key={s.id} style={{ display: "grid", gap: 6 }}>
               <div style={{ position: "relative" }}>
                 <img src={studioApiCalls.mediaUrl(s.keyframe_uri)} alt={`Shot ${i + 1}`}
@@ -255,13 +294,11 @@ export function StageReviewBanner({ project, stageName, onApprove, onReject, dis
                                background: "rgba(0,0,0,0.65)", padding: "2px 5px", borderRadius: 3 }}>
                   S{i + 1}
                 </span>
+                <DownloadBtn url={studioApiCalls.mediaUrl(s.keyframe_uri)} filename={`keyframe_shot_${i + 1}.png`} />
               </div>
               <PromptBox label={`shot ${i + 1} prompt`} text={s.keyframe_prompt} />
             </div>
           ))}
-          {keyed.length > 8 && (
-            <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>+{keyed.length - 8} more shots</div>
-          )}
         </div>
       );
     }
@@ -287,15 +324,16 @@ export function StageReviewBanner({ project, stageName, onApprove, onReject, dis
         : (
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ font: `500 11px/1 ${mono}`, color: T.muted }}>{withAudio.length}/{allShots.length} shots with dialogue</div>
-            {withAudio.slice(0, 3).map((s, i) => (
-              <div key={s.id} style={{ display: "grid", gap: 4 }}>
-                <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>
-                  {(s.dialogue || []).map((l) => `${l.character}: ${l.text}`).join(" / ").slice(0, 100) || `Shot ${i + 1}`}
+            <div style={{ maxHeight: 420, overflowY: "auto", display: "grid", gap: 12, paddingRight: 4 }}>
+              {withAudio.map((s, i) => (
+                <div key={s.id} style={{ display: "grid", gap: 4 }}>
+                  <div style={{ font: `400 11px/1.4 ${sans}`, color: T.faint }}>
+                    {(s.dialogue || []).map((l) => `${l.character}: ${l.text}`).join(" / ") || `Shot ${i + 1}`}
+                  </div>
+                  <audio controls src={studioApiCalls.mediaUrl(s.dialogue_audio_uri)} style={{ width: "100%" }} />
                 </div>
-                <audio controls src={studioApiCalls.mediaUrl(s.dialogue_audio_uri)} style={{ width: "100%" }} />
-              </div>
-            ))}
-            {withAudio.length > 3 && <div style={{ font: `500 10px/1 ${mono}`, color: T.faint }}>+{withAudio.length - 3} more shots</div>}
+              ))}
+            </div>
           </div>
         );
     }
@@ -321,10 +359,13 @@ export function StageReviewBanner({ project, stageName, onApprove, onReject, dis
         <div style={{ display: "grid", gap: 12 }}>
           {realClips.length > 0
             ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
-                {realClips.slice(0, 4).map((s) => (
-                  <video key={s.id} controls src={studioApiCalls.mediaUrl(s.clip_uri)}
-                         style={{ width: "100%", borderRadius: 6, border: `1px solid ${T.line2}` }} />
+              <div style={{ maxHeight: 480, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8, paddingRight: 4 }}>
+                {realClips.map((s, i) => (
+                  <div key={s.id} style={{ position: "relative" }}>
+                    <video controls src={studioApiCalls.mediaUrl(s.clip_uri)}
+                           style={{ width: "100%", borderRadius: 6, border: `1px solid ${T.line2}`, display: "block" }} />
+                    <DownloadBtn url={studioApiCalls.mediaUrl(s.clip_uri)} filename={`clip_shot_${i + 1}.mp4`} />
+                  </div>
                 ))}
               </div>
             )

@@ -32,10 +32,9 @@ routing:
 
   image:
     default:
-      # Priority: free Gemini → FLUX.1-dev-fp8 on RunPod (higher quality)
-      #           → flux-schnell on Replicate → mock
-      default: "google/gemini-3.1-flash-image"
-      fallbacks: ["runpod/comfyui-flux", "replicate/flux-schnell", "mock/image"]
+      # Priority: RunPod ComfyUI FLUX (primary) → Replicate flux-schnell → Gemini (if credits available)
+      default: "runpod/comfyui-flux"
+      fallbacks: ["replicate/flux-schnell", "google/gemini-3.1-flash-image", "mock/image"]
 
   video:
     default:

@@ -73,8 +73,8 @@ export const studioApiCalls = {
     studioApi.get('/v1/genres').then(r => r.data),
   listProjects: (limit = 10, offset = 0) =>
     studioApi.get('/v1/projects', { params: { limit, offset } }).then(r => r.data).catch(() => ({ items: [], total: 0 })),
-  createProject: (concept, genre, review_mode = false) =>
-    studioApi.post('/v1/projects', { concept, genre, review_mode }).then(r => r.data),
+  createProject: (concept, genre, review_mode = false, target_duration_s = null) =>
+    studioApi.post('/v1/projects', { concept, genre, review_mode, target_duration_s }).then(r => r.data),
   runProject: (id, body = {}) =>
     studioApi.post('/v1/projects/' + id + '/run', body).then(r => r.data),
   cancelProject: id =>

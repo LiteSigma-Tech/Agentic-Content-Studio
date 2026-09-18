@@ -135,6 +135,7 @@ class Project(BaseModel):
     music_uri: Optional[str] = None        # generated/selected music bed
     master_audio_uri: Optional[str] = None # mixed dialogue + music (ducked)
     final_av_uri: Optional[str] = None     # video + audio muxed (final deliverable)
+    target_duration_s: Optional[int] = None  # user-requested total runtime in seconds
     pipeline: PipelineState = Field(default_factory=PipelineState)
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
